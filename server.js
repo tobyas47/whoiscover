@@ -68,7 +68,8 @@ function createRoom(hostId, hostName) {
     eliminatedTonight: [],
     gameLog: [],
     timer: null,       // setTimeout reference
-    timerEnd: null     // timestamp when timer expires
+    timerEnd: null,    // timestamp when timer expires
+    spectators: new Map() // socketId -> {id, name}
   };
   rooms.set(roomId, room);
   return room;
@@ -454,6 +455,12 @@ function broadcastRoomState(room) {
   for (const [socketId, player] of room.players) {
     io.to(socketId).emit('roomState', getRoomState(room, socketId));
   }
+  // 观战者收到无身份信息的状态
+  const spectatorState = getRoomState(room, null);
+  spectatorState.isSpectator = true;
+  for (const [socketId] of room.spectators) {
+    io.to(socketId).emit('roomState', spectatorState);
+  }
 }
 
 // ============ Socket.IO 事件 ============
@@ -486,10 +493,19 @@ io.on('connection', (socket) => {
       callback({ success: false, error: '房间不存在' });
       return;
     }
+
+    // 游戏已开始，以观战者身份加入
     if (room.phase !== 'waiting') {
-      callback({ success: false, error: '游戏已开始' });
+      room.spectators.set(socket.id, { id: socket.id, name: playerName });
+      currentRoom = room;
+      socket.join(room.id);
+      callback({ success: true, roomId: room.id, spectator: true });
+      const spectatorState = getRoomState(room, null);
+      spectatorState.isSpectator = true;
+      socket.emit('roomState', spectatorState);
       return;
     }
+
     if (room.players.size >= 12) {
       callback({ success: false, error: '房间已满（最多12人）' });
       return;
@@ -758,9 +774,17 @@ io.on('connection', (socket) => {
 
   socket.on('disconnect', () => {
     if (currentRoom) {
+      // 观战者离开
+      if (currentRoom.spectators.has(socket.id)) {
+        currentRoom.spectators.delete(socket.id);
+        return;
+      }
+
       currentRoom.players.delete(socket.id);
 
-      if (currentRoom.players.size === 0) {
+      if (currentRoom.players.size === 0 && currentRoom.spectators.size === 0) {
+        rooms.delete(currentRoom.id);
+      } else if (currentRoom.players.size === 0) {
         rooms.delete(currentRoom.id);
       } else {
         // 如果房主离开，转移房主

@@ -9,6 +9,7 @@ const roomScreen = $('#room');
 
 let myId = null;
 let isHost = false;
+let isSpectator = false;
 let currentPhase = '';
 let nightActionSent = false;
 let voteSent = false;
@@ -38,7 +39,11 @@ function joinRoom() {
   if (!name) return shake($('#playerName'));
   if (!roomId) return shake($('#roomIdInput'));
   socket.emit('joinRoom', { name, roomId }, (res) => {
-    if (res.success) { myId = socket.id; enterRoom(res.roomId); }
+    if (res.success) {
+      myId = socket.id;
+      if (res.spectator) isSpectator = true;
+      enterRoom(res.roomId);
+    }
     else alert(res.error);
   });
 }
@@ -47,7 +52,26 @@ function enterRoom(roomId) {
   lobbyScreen.classList.remove('active');
   roomScreen.classList.add('active');
   $('#displayRoomId').textContent = roomId;
+  history.replaceState(null, '', '#' + roomId);
 }
+
+// 复制邀请链接
+$('#btnCopyLink').addEventListener('click', () => {
+  const url = location.origin + location.pathname + '#' + $('#displayRoomId').textContent;
+  navigator.clipboard.writeText(url).then(() => {
+    $('#btnCopyLink').textContent = '✓';
+    setTimeout(() => $('#btnCopyLink').textContent = '🔗', 1500);
+  });
+});
+
+// 自动加入：URL中有房间号时预填
+(function autoJoinFromHash() {
+  const hash = location.hash.slice(1).trim().toUpperCase();
+  if (hash) {
+    $('#roomIdInput').value = hash;
+    $('#joinPanel').classList.remove('hidden');
+  }
+})();
 
 // Rules toggle
 $('#rulesToggle').addEventListener('click', () => {
@@ -138,6 +162,7 @@ $('#btnRestart').addEventListener('click', () => socket.emit('restartGame'));
 socket.on('connect', () => { myId = socket.id; });
 
 socket.on('roomState', (state) => {
+  if (state.isSpectator) isSpectator = true;
   isHost = state.hostId === myId;
   currentPhase = state.phase;
 
@@ -173,10 +198,21 @@ function render(state) {
   renderPlayers(state);
   startCountdown(state.timerEnd);
 
+  // 观战者标识
+  document.body.classList.toggle('spectator-mode', isSpectator);
+
   // Hide all panels
   ['nightPanel','dayPanel','votePanel','waitingPanel','endPanel','angelPickPanel'].forEach(id => {
     $(`#${id}`).classList.add('hidden');
   });
+
+  if (isSpectator) {
+    // 观战者只看日志和玩家列表
+    $('#spectatorBadge').classList.remove('hidden');
+    renderLog(state.gameLog);
+    return;
+  }
+  $('#spectatorBadge').classList.add('hidden');
 
   switch (state.phase) {
     case 'waiting': renderWaiting(state); break;
