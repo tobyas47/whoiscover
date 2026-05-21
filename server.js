@@ -110,31 +110,53 @@ function getRoomState(room, playerId) {
   };
 }
 
-// 天使出词模式：先随机选一个人作为天使，其他人暂时不分配
+// 天使出词模式：先分配所有角色（但不分配词语），然后等天使出词
 function preAssignAngel(room) {
   const playerIds = Array.from(room.players.keys());
   const shuffled = [...playerIds].sort(() => Math.random() - 0.5);
+  const { undercoverCount, angelCount, blankCount } = room.settings;
+
   // 重置所有玩家
   for (const [_, p] of room.players) {
     p.role = null;
     p.word = null;
     p.alive = true;
   }
-  // 分配天使（按设置数量，通常1个）
-  const angelCount = room.settings.angelCount;
-  for (let i = 0; i < angelCount && i < shuffled.length; i++) {
-    const player = room.players.get(shuffled[i]);
+
+  let index = 0;
+
+  // 分配卧底
+  for (let i = 0; i < undercoverCount && index < shuffled.length; i++, index++) {
+    const player = room.players.get(shuffled[index]);
+    player.role = 'undercover';
+    player.word = '等待天使出词...';
+  }
+
+  // 分配天使
+  for (let i = 0; i < angelCount && index < shuffled.length; i++, index++) {
+    const player = room.players.get(shuffled[index]);
     player.role = 'angel';
     player.word = '请出两个相似的词';
   }
+
+  // 分配白板
+  for (let i = 0; i < blankCount && index < shuffled.length; i++, index++) {
+    const player = room.players.get(shuffled[index]);
+    player.role = 'blank';
+    player.word = '（无词）';
+  }
+
+  // 剩余为好人
+  for (; index < shuffled.length; index++) {
+    const player = room.players.get(shuffled[index]);
+    player.role = 'good';
+    player.word = '等待天使出词...';
+  }
 }
 
-// 天使出完词后，完成剩余角色分配并开始游戏
+// 天使出完词后，分配词语并开始游戏
 function finishAngelPick(room) {
-  const playerIds = Array.from(room.players.keys());
-  const { undercoverCount, blankCount } = room.settings;
-
-  // 用天使出的词，随机分配好人/坏人词
+  // 用天使出的词，随机选一个作为好人词/坏人词
   const pair = [room.angelWords.wordA, room.angelWords.wordB];
   if (Math.random() > 0.5) {
     room.goodWord = pair[0];
@@ -144,43 +166,26 @@ function finishAngelPick(room) {
     room.badWord = pair[0];
   }
 
-  // 非天使玩家，打乱后分配
-  const nonAngels = playerIds.filter(id => {
-    const p = room.players.get(id);
-    return p.role !== 'angel';
-  }).sort(() => Math.random() - 0.5);
-
-  let index = 0;
-
-  // 分配卧底
-  for (let i = 0; i < undercoverCount && index < nonAngels.length; i++, index++) {
-    const player = room.players.get(nonAngels[index]);
-    player.role = 'undercover';
-    player.word = room.badWord;
-  }
-
-  // 分配白板
-  for (let i = 0; i < blankCount && index < nonAngels.length; i++, index++) {
-    const player = room.players.get(nonAngels[index]);
-    player.role = 'blank';
-    player.word = '（无词）';
-  }
-
-  // 剩余为好人
-  for (; index < nonAngels.length; index++) {
-    const player = room.players.get(nonAngels[index]);
-    player.role = 'good';
-    player.word = room.goodWord;
-  }
-
-  // 更新天使的词显示（打乱顺序）
+  // 根据已分配的角色，分配词语
   for (const [_, p] of room.players) {
-    if (p.role === 'angel') {
-      if (Math.random() > 0.5) {
-        p.word = `词A: ${room.goodWord} / 词B: ${room.badWord}`;
-      } else {
-        p.word = `词A: ${room.badWord} / 词B: ${room.goodWord}`;
-      }
+    switch (p.role) {
+      case 'good':
+        p.word = room.goodWord;
+        break;
+      case 'undercover':
+        p.word = room.badWord;
+        break;
+      case 'angel':
+        // 天使看到两个词但不知道哪个对应哪方
+        if (Math.random() > 0.5) {
+          p.word = `词A: ${room.goodWord} / 词B: ${room.badWord}`;
+        } else {
+          p.word = `词A: ${room.badWord} / 词B: ${room.goodWord}`;
+        }
+        break;
+      case 'blank':
+        p.word = '（无词）';
+        break;
     }
   }
 
@@ -271,7 +276,6 @@ function setRoomTimer(room, seconds, callback) {
 
 function startNightPhase(room) {
   room.phase = 'night';
-  room.round++;
   room.nightActions.clear();
   room.eliminatedTonight = [];
   room.gameLog.push({ type: 'phase', message: `第 ${room.round} 夜晚开始` });
@@ -330,7 +334,8 @@ function resolveNight(room) {
   // 检查胜负
   if (checkWinCondition(room)) return;
 
-  // 进入白天
+  // 进入白天（新一轮）
+  room.round++;
   startDayPhase(room);
 }
 
@@ -344,10 +349,12 @@ function startDayPhase(room) {
   room.dayDiscussionOrder = alivePlayers.sort(() => Math.random() - 0.5);
   room.currentSpeaker = 0;
 
-  if (room.eliminatedTonight.length === 0) {
-    room.gameLog.push({ type: 'phase', message: '天亮了，昨晚是平安夜' });
-  } else {
-    room.gameLog.push({ type: 'phase', message: '天亮了，请查看昨晚情况' });
+  if (room.round > 1) {
+    if (room.eliminatedTonight.length === 0) {
+      room.gameLog.push({ type: 'phase', message: '天亮了，昨晚是平安夜' });
+    } else {
+      room.gameLog.push({ type: 'phase', message: '天亮了，请查看昨晚情况' });
+    }
   }
 
   room.gameLog.push({ type: 'phase', message: '白天讨论阶段开始，请自由发言' });
@@ -632,7 +639,13 @@ io.on('connection', (socket) => {
     const player = currentRoom.players.get(socket.id);
     if (!player || !player.alive) return;
 
+    // 不能刀自己
+    if (targetId === socket.id) return;
+
+    // 验证目标存活
     if (targetId) {
+      const target = currentRoom.players.get(targetId);
+      if (!target || !target.alive) return;
       currentRoom.nightActions.set(socket.id, targetId);
     } else {
       currentRoom.nightActions.delete(socket.id);
@@ -715,6 +728,10 @@ io.on('connection', (socket) => {
 
     if (targetId === socket.id) return; // 不能投自己
 
+    // 验证目标存活
+    const target = currentRoom.players.get(targetId);
+    if (!target || !target.alive) return;
+
     currentRoom.votes.set(socket.id, targetId);
 
     // 检查是否所有存活玩家都已投票
@@ -769,6 +786,7 @@ io.on('connection', (socket) => {
     currentRoom.nightActions.clear();
     currentRoom.votes.clear();
     currentRoom.gameLog = [];
+    currentRoom.angelWords = null;
     broadcastRoomState(currentRoom);
   });
 

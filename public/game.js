@@ -256,8 +256,8 @@ function renderIdentity(state) {
 
     // 胜利条件提示
     const goalMap = {
-      good: '🎯 找出并投票淘汰所有卧底',
-      undercover: '🎯 隐藏身份，淘汰所有非卧底',
+      good: '🎯 找出拿到不同词的人，投票淘汰他们',
+      undercover: '🎯 找出拿到不同词的人，投票淘汰他们',
       angel: '🎯 协助好人找出卧底（你能看到两个词）',
       blank: '🎯 活到最后只剩2人，你就赢了'
     };
