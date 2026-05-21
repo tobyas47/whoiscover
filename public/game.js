@@ -15,12 +15,27 @@ let nightActionSent = false;
 let voteSent = false;
 let timerInterval = null;
 
+// ============ Session Persistence ============
+function saveSession(token, roomId) {
+  sessionStorage.setItem('gameSession', JSON.stringify({ token, roomId }));
+}
+function loadSession() {
+  try { return JSON.parse(sessionStorage.getItem('gameSession')); } catch { return null; }
+}
+function clearSession() {
+  sessionStorage.removeItem('gameSession');
+}
+
 // ============ Lobby ============
 $('#btnCreate').addEventListener('click', () => {
   const name = $('#playerName').value.trim();
   if (!name) return shake($('#playerName'));
   socket.emit('createRoom', name, (res) => {
-    if (res.success) { myId = socket.id; enterRoom(res.roomId); }
+    if (res.success) {
+      myId = socket.id;
+      saveSession(res.token, res.roomId);
+      enterRoom(res.roomId);
+    }
   });
 });
 
@@ -42,6 +57,7 @@ function joinRoom() {
     if (res.success) {
       myId = socket.id;
       if (res.spectator) isSpectator = true;
+      if (res.token) saveSession(res.token, res.roomId);
       enterRoom(res.roomId);
     }
     else alert(res.error);
@@ -159,11 +175,34 @@ $('#btnEndDiscussion').addEventListener('click', () => socket.emit('endDiscussio
 $('#btnRestart').addEventListener('click', () => socket.emit('restartGame'));
 
 // ============ Socket Events ============
-socket.on('connect', () => { myId = socket.id; });
+socket.on('connect', () => {
+  myId = socket.id;
+
+  // 尝试断线重连
+  const session = loadSession();
+  if (session && session.token) {
+    socket.emit('rejoinRoom', session.token, (res) => {
+      if (res.success) {
+        myId = socket.id;
+        if (res.spectator) isSpectator = true;
+        enterRoom(res.roomId);
+      } else {
+        // 重连失败，清除过期 session
+        clearSession();
+      }
+    });
+  }
+});
 
 socket.on('roomState', (state) => {
   if (state.isSpectator) isSpectator = true;
   isHost = state.hostId === myId;
+
+  // 阶段变化时重置行动状态
+  if (currentPhase !== state.phase) {
+    nightActionSent = false;
+    voteSent = false;
+  }
   currentPhase = state.phase;
 
   // Night mode toggle
@@ -335,7 +374,13 @@ function renderNight(state) {
     return;
   }
 
-  nightActionSent = false;
+  if (nightActionSent) {
+    $('#nightTargets').innerHTML = '';
+    $('#nightStatus').textContent = '✓ 已行动，等待他人...';
+    $('#btnSkipNight').disabled = true;
+    $('#btnSkipNight').classList.remove('hidden');
+    return;
+  }
   $('#btnSkipNight').disabled = false;
   $('#btnSkipNight').classList.remove('hidden');
   $('#nightStatus').textContent = '';
@@ -377,7 +422,11 @@ function renderVote(state) {
   const me = state.players.find(p => p.id === myId);
   const panel = $('#votePanel');
   panel.classList.remove('hidden');
-  voteSent = false;
+  if (voteSent) {
+    $('#voteTargets').innerHTML = '';
+    $('#voteStatus').textContent = '✓ 已投票，等待他人...';
+    return;
+  }
   $('#voteStatus').textContent = '';
 
   if (!me || !me.alive) {

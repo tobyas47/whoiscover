@@ -5,15 +5,31 @@ const { v4: uuidv4 } = require('uuid');
 const path = require('path');
 
 const app = express();
+app.set('trust proxy', true);
+
 const server = http.createServer(app);
 const io = new Server(server, {
-  cors: { origin: '*' }
+  cors: { origin: '*' },
+  pingTimeout: 20000,
+  pingInterval: 25000
 });
 
-app.use(express.static(path.join(__dirname, 'public')));
+// 静态文件缓存 1 小时
+app.use(express.static(path.join(__dirname, 'public'), {
+  maxAge: process.env.NODE_ENV === 'production' ? '1h' : 0
+}));
+
+// 健康检查
+app.get('/health', (req, res) => {
+  res.status(200).json({ status: 'ok', rooms: rooms.size, connections: io.engine.clientsCount });
+});
 
 // ============ 游戏数据 ============
 const rooms = new Map(); // roomId -> roomState
+const sessions = new Map(); // token -> { roomId, socketId, name, disconnectTimer }
+const RECONNECT_GRACE = 30000; // 30秒断线重连窗口
+const MAX_LOG_ENTRIES = 100; // 游戏日志上限
+const ROOM_IDLE_TIMEOUT = 30 * 60 * 1000; // 30分钟无活动房间清理
 
 // 预设词库
 const wordPairs = [
@@ -41,7 +57,10 @@ const wordPairs = [
 
 // ============ 房间管理 ============
 function createRoom(hostId, hostName) {
-  const roomId = Math.random().toString(36).substring(2, 8).toUpperCase();
+  let roomId;
+  do {
+    roomId = Math.random().toString(36).substring(2, 8).toUpperCase();
+  } while (rooms.has(roomId));
   const room = {
     id: roomId,
     hostId: hostId,
@@ -69,7 +88,8 @@ function createRoom(hostId, hostName) {
     gameLog: [],
     timer: null,       // setTimeout reference
     timerEnd: null,    // timestamp when timer expires
-    spectators: new Map() // socketId -> {id, name}
+    spectators: new Map(), // socketId -> {id, name}
+    _lastActivity: Date.now()
   };
   rooms.set(roomId, room);
   return room;
@@ -282,6 +302,7 @@ function startNightPhase(room) {
 
   // 夜晚计时器：时间到未行动的人自动跳过
   setRoomTimer(room, room.settings.nightTimer, () => {
+    if (room.phase !== 'night') return; // 防止竞态
     // 未行动的玩家自动跳过
     const alivePlayers = Array.from(room.players.entries())
       .filter(([_, p]) => p.alive);
@@ -308,14 +329,9 @@ function resolveNight(room) {
     if (actor.role === 'good' || actor.role === 'angel' || actor.role === 'blank') {
       // 好人/天使/白板刀人 → 自杀
       suicided.add(actorId);
-      room.gameLog.push({ type: 'night', message: `${actor.name} 选择了刀人，因为是好人阵营，自杀了` });
     } else if (actor.role === 'undercover') {
       // 卧底刀人 → 目标死亡
       killed.add(targetId);
-      const target = room.players.get(targetId);
-      if (target) {
-        room.gameLog.push({ type: 'night', message: `${target.name} 被卧底杀害了` });
-      }
     }
   }
 
@@ -330,6 +346,14 @@ function resolveNight(room) {
   }
 
   room.eliminatedTonight = [...killed, ...suicided];
+
+  // 只公布谁死了，不暴露死因（保护角色信息）
+  for (const id of room.eliminatedTonight) {
+    const p = room.players.get(id);
+    if (p) {
+      room.gameLog.push({ type: 'night', message: `${p.name} 在夜晚中死去` });
+    }
+  }
 
   // 检查胜负
   if (checkWinCondition(room)) return;
@@ -361,6 +385,7 @@ function startDayPhase(room) {
 
   // 白天讨论计时器
   setRoomTimer(room, room.settings.dayTimer, () => {
+    if (room.phase !== 'day') return; // 防止竞态
     // 第一天不投票
     if (room.round === 1) {
       room.gameLog.push({ type: 'phase', message: '讨论时间结束，进入夜晚' });
@@ -381,6 +406,7 @@ function startVotePhase(room) {
 
   // 投票计时器：时间到未投票的人视为弃票
   setRoomTimer(room, room.settings.voteTimer, () => {
+    if (room.phase !== 'vote') return; // 防止竞态
     resolveVote(room);
   });
 
@@ -459,6 +485,11 @@ function checkWinCondition(room) {
 }
 
 function broadcastRoomState(room) {
+  room._lastActivity = Date.now();
+  // 截断过长的日志
+  if (room.gameLog.length > MAX_LOG_ENTRIES) {
+    room.gameLog = room.gameLog.slice(-MAX_LOG_ENTRIES);
+  }
   for (const [socketId, player] of room.players) {
     io.to(socketId).emit('roomState', getRoomState(room, socketId));
   }
@@ -474,6 +505,22 @@ function broadcastRoomState(room) {
 io.on('connection', (socket) => {
   let currentRoom = null;
   let playerName = '';
+  let sessionToken = null;
+
+  // 简易频率限制：每秒最多 10 条消息
+  let msgCount = 0;
+  let msgResetTimer = null;
+  function rateLimit() {
+    if (!msgResetTimer) {
+      msgResetTimer = setTimeout(() => { msgCount = 0; msgResetTimer = null; }, 1000);
+    }
+    msgCount++;
+    if (msgCount > 10) {
+      socket.emit('error', '操作太频繁，请稍后再试');
+      return true;
+    }
+    return false;
+  }
 
   socket.on('createRoom', (name, callback) => {
     playerName = name.trim().substring(0, 10);
@@ -486,8 +533,10 @@ io.on('connection', (socket) => {
       word: null
     });
     currentRoom = room;
+    sessionToken = uuidv4();
+    sessions.set(sessionToken, { roomId: room.id, socketId: socket.id, name: playerName, disconnectTimer: null });
     socket.join(room.id);
-    callback({ success: true, roomId: room.id });
+    callback({ success: true, roomId: room.id, token: sessionToken });
     broadcastRoomState(room);
   });
 
@@ -526,9 +575,111 @@ io.on('connection', (socket) => {
       word: null
     });
     currentRoom = room;
+    sessionToken = uuidv4();
+    sessions.set(sessionToken, { roomId: room.id, socketId: socket.id, name: playerName, disconnectTimer: null });
     socket.join(room.id);
-    callback({ success: true, roomId: room.id });
+    callback({ success: true, roomId: room.id, token: sessionToken });
     broadcastRoomState(room);
+  });
+
+  // 断线重连
+  socket.on('rejoinRoom', (token, callback) => {
+    const session = sessions.get(token);
+    if (!session) {
+      callback({ success: false, error: '会话已过期' });
+      return;
+    }
+
+    const room = rooms.get(session.roomId);
+    if (!room) {
+      sessions.delete(token);
+      callback({ success: false, error: '房间已关闭' });
+      return;
+    }
+
+    // 取消断线倒计时
+    if (session.disconnectTimer) {
+      clearTimeout(session.disconnectTimer);
+      session.disconnectTimer = null;
+    }
+
+    const oldSocketId = session.socketId;
+    const newSocketId = socket.id;
+
+    // 恢复玩家身份（将旧 socketId 映射到新的）
+    const player = room.players.get(oldSocketId);
+    if (player) {
+      room.players.delete(oldSocketId);
+      player.id = newSocketId;
+      room.players.set(newSocketId, player);
+
+      // 更新房主ID
+      if (room.hostId === oldSocketId) {
+        room.hostId = newSocketId;
+      }
+
+      // 更新夜晚行动中的引用
+      if (room.nightActions.has(oldSocketId)) {
+        const target = room.nightActions.get(oldSocketId);
+        room.nightActions.delete(oldSocketId);
+        room.nightActions.set(newSocketId, target);
+      }
+      // 更新作为目标的引用
+      for (const [actorId, targetId] of room.nightActions) {
+        if (targetId === oldSocketId) {
+          room.nightActions.set(actorId, newSocketId);
+        }
+      }
+
+      // 更新投票中的引用
+      if (room.votes.has(oldSocketId)) {
+        const target = room.votes.get(oldSocketId);
+        room.votes.delete(oldSocketId);
+        room.votes.set(newSocketId, target);
+      }
+      for (const [voterId, targetId] of room.votes) {
+        if (targetId === oldSocketId) {
+          room.votes.set(voterId, newSocketId);
+        }
+      }
+
+      // 更新发言顺序
+      const speakerIdx = room.dayDiscussionOrder.indexOf(oldSocketId);
+      if (speakerIdx !== -1) {
+        room.dayDiscussionOrder[speakerIdx] = newSocketId;
+      }
+    } else {
+      // 可能是观战者重连
+      const spectator = room.spectators.get(oldSocketId);
+      if (spectator) {
+        room.spectators.delete(oldSocketId);
+        spectator.id = newSocketId;
+        room.spectators.set(newSocketId, spectator);
+      } else {
+        sessions.delete(token);
+        callback({ success: false, error: '玩家已被移除' });
+        return;
+      }
+    }
+
+    // 更新 session
+    session.socketId = newSocketId;
+    sessionToken = token;
+    playerName = session.name;
+    currentRoom = room;
+    socket.join(room.id);
+
+    const isSpectator = room.spectators.has(newSocketId);
+    callback({ success: true, roomId: room.id, spectator: isSpectator });
+
+    // 发送当前状态
+    if (isSpectator) {
+      const spectatorState = getRoomState(room, null);
+      spectatorState.isSpectator = true;
+      socket.emit('roomState', spectatorState);
+    } else {
+      socket.emit('roomState', getRoomState(room, newSocketId));
+    }
   });
 
   socket.on('updateSettings', (settings) => {
@@ -756,12 +907,13 @@ io.on('connection', (socket) => {
   });
 
   socket.on('sendMessage', (message) => {
+    if (rateLimit()) return;
     if (!currentRoom) return;
     if (currentRoom.phase !== 'day') return;
     const player = currentRoom.players.get(socket.id);
     if (!player || !player.alive) return;
 
-    const sanitized = message.trim().substring(0, 200);
+    const sanitized = String(message || '').trim().substring(0, 200);
     if (!sanitized) return;
 
     io.to(currentRoom.id).emit('chatMessage', {
@@ -791,25 +943,103 @@ io.on('connection', (socket) => {
   });
 
   socket.on('disconnect', () => {
-    if (currentRoom) {
-      // 观战者离开
-      if (currentRoom.spectators.has(socket.id)) {
-        currentRoom.spectators.delete(socket.id);
+    if (!currentRoom) return;
+
+    // 观战者离开：无需保留
+    if (currentRoom.spectators.has(socket.id)) {
+      currentRoom.spectators.delete(socket.id);
+      if (sessionToken) sessions.delete(sessionToken);
+      return;
+    }
+
+    // 等待阶段或游戏结束：立即移除（无需保留位置）
+    if (currentRoom.phase === 'waiting' || currentRoom.phase === 'ended') {
+      currentRoom.players.delete(socket.id);
+      if (sessionToken) sessions.delete(sessionToken);
+
+      if (currentRoom.players.size === 0) {
+        clearRoomTimer(currentRoom);
+        rooms.delete(currentRoom.id);
         return;
       }
+      if (currentRoom.hostId === socket.id) {
+        currentRoom.hostId = currentRoom.players.keys().next().value;
+      }
+      broadcastRoomState(currentRoom);
+      return;
+    }
 
+    // 游戏进行中断线：给予重连宽限期
+    const session = sessionToken ? sessions.get(sessionToken) : null;
+    if (session) {
+      const roomRef = currentRoom;
+      const disconnectedId = socket.id;
+      const disconnectedPlayer = roomRef.players.get(disconnectedId);
+
+      // 标记为断线（但保留在 players Map 中）
+      if (disconnectedPlayer) {
+        disconnectedPlayer._disconnected = true;
+        roomRef.gameLog.push({ type: 'phase', message: `${disconnectedPlayer.name} 断线，等待重连...` });
+        broadcastRoomState(roomRef);
+      }
+
+      session.disconnectTimer = setTimeout(() => {
+        session.disconnectTimer = null;
+        sessions.delete(sessionToken);
+
+        // 宽限期到，正式移除
+        const player = roomRef.players.get(disconnectedId);
+        if (!player) return; // 已被处理
+        delete player._disconnected;
+        roomRef.players.delete(disconnectedId);
+
+        if (roomRef.players.size === 0) {
+          clearRoomTimer(roomRef);
+          rooms.delete(roomRef.id);
+          return;
+        }
+
+        if (roomRef.hostId === disconnectedId) {
+          roomRef.hostId = roomRef.players.keys().next().value;
+        }
+
+        // 天使出词阶段天使掉线 → 回到等待
+        if (roomRef.phase === 'angelPick' && player.role === 'angel') {
+          clearRoomTimer(roomRef);
+          roomRef.phase = 'waiting';
+          roomRef.gameLog.push({ type: 'phase', message: '天使已离开，游戏取消' });
+          for (const [_, p] of roomRef.players) {
+            p.role = null;
+            p.word = null;
+            p.alive = true;
+          }
+          broadcastRoomState(roomRef);
+          return;
+        }
+
+        // 游戏进行中正式离开
+        roomRef.gameLog.push({ type: 'phase', message: `${player.name} 断线超时，已移除` });
+        if (!checkWinCondition(roomRef)) {
+          broadcastRoomState(roomRef);
+        }
+      }, RECONNECT_GRACE);
+    } else {
+      // 无 session（不该发生，但兜底处理）
+      const disconnectedPlayer = currentRoom.players.get(socket.id);
       currentRoom.players.delete(socket.id);
 
-      if (currentRoom.players.size === 0 && currentRoom.spectators.size === 0) {
+      if (currentRoom.players.size === 0) {
+        clearRoomTimer(currentRoom);
         rooms.delete(currentRoom.id);
-      } else if (currentRoom.players.size === 0) {
-        rooms.delete(currentRoom.id);
-      } else {
-        // 如果房主离开，转移房主
-        if (currentRoom.hostId === socket.id) {
-          const newHost = currentRoom.players.keys().next().value;
-          currentRoom.hostId = newHost;
-        }
+        return;
+      }
+      if (currentRoom.hostId === socket.id) {
+        currentRoom.hostId = currentRoom.players.keys().next().value;
+      }
+      if (disconnectedPlayer) {
+        currentRoom.gameLog.push({ type: 'phase', message: `${disconnectedPlayer.name} 断线离开` });
+      }
+      if (!checkWinCondition(currentRoom)) {
         broadcastRoomState(currentRoom);
       }
     }
@@ -821,3 +1051,37 @@ const PORT = process.env.PORT || 8080;
 server.listen(PORT, () => {
   console.log(`服务器运行在端口 ${PORT}`);
 });
+
+// 定时清理空闲房间（每5分钟）
+setInterval(() => {
+  const now = Date.now();
+  for (const [roomId, room] of rooms) {
+    // 空房间或长时间无人在等待中的房间
+    if (room.players.size === 0) {
+      clearRoomTimer(room);
+      rooms.delete(roomId);
+    } else if (room.phase === 'waiting' && room._lastActivity && now - room._lastActivity > ROOM_IDLE_TIMEOUT) {
+      clearRoomTimer(room);
+      rooms.delete(roomId);
+      // 通知还在房间的人
+      for (const [socketId] of room.players) {
+        io.to(socketId).emit('error', '房间因长时间无活动已关闭');
+      }
+    }
+  }
+}, 5 * 60 * 1000);
+
+// 优雅关闭（Cloud Run SIGTERM）
+function gracefulShutdown() {
+  console.log('收到关闭信号，开始清理...');
+  io.emit('error', '服务器正在重启，请稍后重连');
+  io.close();
+  server.close(() => {
+    console.log('服务器已关闭');
+    process.exit(0);
+  });
+  // 10秒后强制退出
+  setTimeout(() => process.exit(1), 10000);
+}
+process.on('SIGTERM', gracefulShutdown);
+process.on('SIGINT', gracefulShutdown);
