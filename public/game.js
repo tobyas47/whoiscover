@@ -1,4 +1,10 @@
-const socket = io();
+const socket = io({
+  reconnection: true,
+  reconnectionAttempts: Infinity,
+  reconnectionDelay: 1000,
+  reconnectionDelayMax: 5000,
+  timeout: 20000
+});
 
 // ============ DOM ============
 const $ = (sel) => document.querySelector(sel);

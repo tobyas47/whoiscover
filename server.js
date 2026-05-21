@@ -10,7 +10,7 @@ app.set('trust proxy', true);
 const server = http.createServer(app);
 const io = new Server(server, {
   cors: { origin: '*' },
-  pingTimeout: 20000,
+  pingTimeout: 120000,
   pingInterval: 25000
 });
 
