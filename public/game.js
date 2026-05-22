@@ -145,6 +145,14 @@ $('#btnSubmitAngelWords').addEventListener('click', () => {
   socket.emit('submitAngelWords', { wordA, wordB });
 });
 
+$('#btnSubmitBlankGuess').addEventListener('click', () => {
+  const wordA = $('#blankGuessA').value.trim();
+  const wordB = $('#blankGuessB').value.trim();
+  if (!wordA || !wordB) return alert('请输入两个词');
+  socket.emit('submitBlankGuess', { wordA, wordB });
+  $('#btnSubmitBlankGuess').disabled = true;
+});
+
 function syncSettings() {
   socket.emit('updateSettings', {
     undercoverCount: +$('#settingUndercover').value,
@@ -247,7 +255,7 @@ function render(state) {
   document.body.classList.toggle('spectator-mode', isSpectator);
 
   // Hide all panels
-  ['nightPanel','dayPanel','votePanel','waitingPanel','endPanel','angelPickPanel'].forEach(id => {
+  ['nightPanel','dayPanel','votePanel','waitingPanel','endPanel','angelPickPanel','blankGuessPanel'].forEach(id => {
     $(`#${id}`).classList.add('hidden');
   });
 
@@ -265,6 +273,7 @@ function render(state) {
     case 'night': renderNight(state); break;
     case 'day': renderDay(state); break;
     case 'vote': renderVote(state); break;
+    case 'blankGuess': renderBlankGuess(state); break;
     case 'ended': renderEnd(state); break;
   }
 
@@ -272,7 +281,7 @@ function render(state) {
 }
 
 function renderPhase(state) {
-  const names = { waiting: '等待中', angelPick: '天使出词', night: '夜晚', day: '白天', vote: '投票', ended: '结束' };
+  const names = { waiting: '等待中', angelPick: '天使出词', night: '夜晚', day: '白天', vote: '投票', blankGuess: '白板猜词', ended: '结束' };
   const badge = $('#phaseBadge');
   badge.textContent = names[state.phase];
   badge.className = `phase-pill phase-${state.phase}`;
@@ -304,7 +313,7 @@ function renderIdentity(state) {
       good: '🎯 找出拿到不同词的人，投票淘汰他们',
       undercover: '🎯 找出拿到不同词的人，投票淘汰他们',
       angel: '🎯 协助好人找出卧底（你能看到两个词）',
-      blank: '🎯 活到最后只剩2人，你就赢了'
+      blank: '🎯 活到最后，让好人和卧底全部死光'
     };
     $('#cardGoal').textContent = state.phase === 'ended' ? '' : goalMap[me.role];
   } else {
@@ -375,6 +384,7 @@ function renderNight(state) {
 
   if (!me || !me.alive) {
     $('#nightTargets').innerHTML = '';
+    $('#nightConfirmBar').classList.add('hidden');
     $('#nightStatus').textContent = '你已阵亡，静待天明...';
     $('#btnSkipNight').classList.add('hidden');
     return;
@@ -382,6 +392,7 @@ function renderNight(state) {
 
   if (nightActionSent) {
     $('#nightTargets').innerHTML = '';
+    $('#nightConfirmBar').classList.add('hidden');
     $('#nightStatus').textContent = '✓ 已行动，等待他人...';
     $('#btnSkipNight').disabled = true;
     $('#btnSkipNight').classList.remove('hidden');
@@ -389,7 +400,10 @@ function renderNight(state) {
   }
   $('#btnSkipNight').disabled = false;
   $('#btnSkipNight').classList.remove('hidden');
+  $('#nightConfirmBar').classList.add('hidden');
   $('#nightStatus').textContent = '';
+
+  let selectedNightTarget = null;
 
   const targets = $('#nightTargets');
   targets.innerHTML = '';
@@ -400,15 +414,31 @@ function renderNight(state) {
     btn.textContent = p.name;
     btn.addEventListener('click', () => {
       if (nightActionSent) return;
-      if (!confirm(`确定对「${p.name}」动刀？\n⚠ 若你是好人阵营，此举将导致自己死亡！`)) return;
-      socket.emit('nightAction', p.id);
-      nightActionSent = true;
-      $('#btnSkipNight').disabled = true;
+      // 取消之前的选中
+      targets.querySelectorAll('.target-chip').forEach(b => b.classList.remove('selected'));
       btn.classList.add('selected');
-      targets.querySelectorAll('.target-chip').forEach(b => b.disabled = true);
+      selectedNightTarget = p.id;
+      $('#nightConfirmBar').classList.remove('hidden');
     });
     targets.appendChild(btn);
   });
+
+  // 确认按钮
+  $('#btnNightConfirm').onclick = () => {
+    if (!selectedNightTarget || nightActionSent) return;
+    socket.emit('nightAction', selectedNightTarget);
+    nightActionSent = true;
+    $('#btnSkipNight').disabled = true;
+    targets.querySelectorAll('.target-chip').forEach(b => b.disabled = true);
+    $('#nightConfirmBar').classList.add('hidden');
+  };
+
+  // 取消按钮
+  $('#btnNightCancel').onclick = () => {
+    selectedNightTarget = null;
+    targets.querySelectorAll('.target-chip').forEach(b => b.classList.remove('selected'));
+    $('#nightConfirmBar').classList.add('hidden');
+  };
 }
 
 function renderDay(state) {
@@ -430,16 +460,21 @@ function renderVote(state) {
   panel.classList.remove('hidden');
   if (voteSent) {
     $('#voteTargets').innerHTML = '';
-    $('#voteStatus').textContent = '✓ 已投票，等待他人...';
+    $('#voteConfirmBar').classList.add('hidden');
+    $('#btnAbstain').disabled = true;
     return;
   }
   $('#voteStatus').textContent = '';
+  $('#voteConfirmBar').classList.add('hidden');
 
   if (!me || !me.alive) {
     $('#voteTargets').innerHTML = '';
+    $('#btnAbstain').disabled = true;
     $('#voteStatus').textContent = '你已阵亡，无法投票';
     return;
   }
+
+  let selectedVoteTarget = null;
 
   const targets = $('#voteTargets');
   targets.innerHTML = '';
@@ -450,14 +485,57 @@ function renderVote(state) {
     btn.textContent = p.name;
     btn.addEventListener('click', () => {
       if (voteSent) return;
-      socket.emit('vote', p.id);
-      voteSent = true;
+      targets.querySelectorAll('.target-chip').forEach(b => b.classList.remove('selected'));
       btn.classList.add('selected');
-      targets.querySelectorAll('.target-chip').forEach(b => b.disabled = true);
-      $('#voteStatus').textContent = `你投了 ${p.name}`;
+      selectedVoteTarget = p.id;
+      $('#voteConfirmBar').classList.remove('hidden');
     });
     targets.appendChild(btn);
   });
+
+  // 确认按钮
+  $('#btnVoteConfirm').onclick = () => {
+    if (!selectedVoteTarget || voteSent) return;
+    socket.emit('vote', selectedVoteTarget);
+    voteSent = true;
+    targets.querySelectorAll('.target-chip').forEach(b => b.disabled = true);
+    $('#voteConfirmBar').classList.add('hidden');
+    $('#btnAbstain').disabled = true;
+    $('#voteStatus').textContent = '✓ 已投票，等待他人...';
+  };
+
+  // 取消按钮
+  $('#btnVoteCancel').onclick = () => {
+    selectedVoteTarget = null;
+    targets.querySelectorAll('.target-chip').forEach(b => b.classList.remove('selected'));
+    $('#voteConfirmBar').classList.add('hidden');
+  };
+
+  // 弃权按钮
+  $('#btnAbstain').disabled = false;
+  $('#btnAbstain').onclick = () => {
+    if (voteSent) return;
+    socket.emit('vote', null);
+    voteSent = true;
+    targets.querySelectorAll('.target-chip').forEach(b => b.disabled = true);
+    $('#voteConfirmBar').classList.add('hidden');
+    $('#btnAbstain').disabled = true;
+    $('#voteStatus').textContent = '✓ 已弃权，等待他人...';
+  };
+}
+
+function renderBlankGuess(state) {
+  const panel = $('#blankGuessPanel');
+  panel.classList.remove('hidden');
+
+  if (state.blankGuessPlayer === myId) {
+    $('#blankGuessInput').classList.remove('hidden');
+    $('#blankGuessWait').classList.add('hidden');
+  } else {
+    $('#blankGuessInput').classList.add('hidden');
+    $('#blankGuessWait').classList.remove('hidden');
+    $('#blankGuessWait').textContent = '等待白板猜词...';
+  }
 }
 
 function renderEnd(state) {
@@ -485,10 +563,13 @@ function renderEnd(state) {
 }
 
 function renderLog(logs) {
+  const html = (!logs || !logs.length)
+    ? '<div class="log-line">暂无记录</div>'
+    : logs.map(l => `<div class="log-line log-${l.type}">${esc(l.message)}</div>`).join('');
   const el = $('#logContent');
-  if (!logs || !logs.length) { el.innerHTML = '<div class="log-line">暂无记录</div>'; return; }
-  el.innerHTML = logs.map(l => `<div class="log-line log-${l.type}">${esc(l.message)}</div>`).join('');
-  el.scrollTop = el.scrollHeight;
+  const elD = $('#logContentDesktop');
+  if (el) { el.innerHTML = html; el.scrollTop = el.scrollHeight; }
+  if (elD) { elD.innerHTML = html; elD.scrollTop = elD.scrollHeight; }
 }
 
 function appendChat(name, message) {

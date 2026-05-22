@@ -6,9 +6,22 @@
   <title>谁是卧底</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=LXGW+WenKai:wght@400;700&family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=LXGW+WenKai:wght@400;700&family=Outfit:wght@300;400;500;600;700&family=Noto+Serif+SC:wght@400;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="style.css">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🎭</text></svg>">
+  <script>
+    // Detect device type and set layout class
+    (function() {
+      function detectLayout() {
+        var w = window.innerWidth;
+        var isTouch = 'ontouchstart' in window || navigator.maxTouchPoints > 0;
+        var layout = (w >= 1080) ? 'desktop' : (w >= 768) ? 'tablet' : 'mobile';
+        document.documentElement.setAttribute('data-layout', layout);
+      }
+      detectLayout();
+      window.addEventListener('resize', detectLayout);
+    })();
+  </script>
 </head>
 <body>
   <div id="app">
@@ -76,7 +89,7 @@
             </div>
             <div class="rule-row highlight">
               <span>⚔️</span>
-              <span>好人胜：淘汰所有卧底 · 卧底胜：杀死所有非卧底 · 白板胜：活到最后≤2人</span>
+              <span>好人胜：淘汰所有卧底和白板 · 卧底胜：人数≥其他玩家 · 白板胜：好人和卧底全灭</span>
             </div>
           </div>
         </footer>
@@ -100,17 +113,33 @@
           </div>
         </header>
 
-        <!-- 身份卡 -->
-        <section id="playerCard" class="identity-card hidden">
-          <div class="identity-inner">
-            <div class="identity-role" id="cardRole"></div>
-            <div class="identity-word" id="cardWord"></div>
-            <div class="identity-goal" id="cardGoal"></div>
-          </div>
-        </section>
+        <!-- Desktop layout wrapper -->
+        <div class="room-body">
+          <!-- Left column: identity + players -->
+          <aside class="room-sidebar">
+            <!-- 身份卡 -->
+            <section id="playerCard" class="identity-card hidden">
+              <div class="identity-inner">
+                <div class="identity-role" id="cardRole"></div>
+                <div class="identity-word" id="cardWord"></div>
+                <div class="identity-goal" id="cardGoal"></div>
+              </div>
+            </section>
 
-        <!-- 玩家 -->
-        <section id="playerList" class="players-grid"></section>
+            <!-- 玩家 -->
+            <section id="playerList" class="players-grid"></section>
+
+            <!-- 日志 (desktop: in sidebar) -->
+            <section class="log-section log-desktop">
+              <details>
+                <summary class="log-toggle">事件记录</summary>
+                <div id="logContentDesktop" class="log-body"></div>
+              </details>
+            </section>
+          </aside>
+
+          <!-- Center: main action panels -->
+          <main class="room-main">
 
         <!-- 夜晚面板 -->
         <section id="nightPanel" class="panel hidden">
@@ -119,6 +148,10 @@
             <p class="panel-hint danger">好人阵营刀人将导致自己死亡</p>
           </div>
           <div id="nightTargets" class="target-grid"></div>
+          <div id="nightConfirmBar" class="confirm-bar hidden">
+            <button id="btnNightConfirm" class="btn btn-accent">确认动刀</button>
+            <button id="btnNightCancel" class="btn btn-ghost">取消</button>
+          </div>
           <div class="panel-foot">
             <button id="btnSkipNight" class="btn btn-ghost full-width">不行动</button>
           </div>
@@ -145,6 +178,11 @@
             <p class="panel-hint">选择你认为是卧底的人</p>
           </div>
           <div id="voteTargets" class="target-grid"></div>
+          <div id="voteConfirmBar" class="confirm-bar hidden">
+            <button id="btnVoteConfirm" class="btn btn-accent">确认投票</button>
+            <button id="btnVoteCancel" class="btn btn-ghost">取消</button>
+          </div>
+          <button id="btnAbstain" class="btn btn-ghost full-width mt">弃权</button>
           <div id="voteStatus" class="progress-hint"></div>
         </section>
 
@@ -215,6 +253,20 @@
           <p id="angelPickWait" class="progress-hint hidden">等待天使出词...</p>
         </section>
 
+        <!-- 白板猜词面板 -->
+        <section id="blankGuessPanel" class="panel hidden">
+          <div class="panel-head">
+            <h2>白板猜词</h2>
+            <p class="panel-hint">猜对两个词即可翻盘胜利！（60秒）</p>
+          </div>
+          <div id="blankGuessInput" class="angel-pick-form hidden">
+            <input type="text" id="blankGuessA" placeholder="第一个词" maxlength="20" autocomplete="off">
+            <input type="text" id="blankGuessB" placeholder="第二个词" maxlength="20" autocomplete="off">
+            <button id="btnSubmitBlankGuess" class="btn btn-accent full-width mt">确认猜词</button>
+          </div>
+          <p id="blankGuessWait" class="progress-hint hidden">等待白板猜词...</p>
+        </section>
+
         <!-- 结算面板 -->
         <section id="endPanel" class="panel hidden">
           <div class="panel-head">
@@ -224,8 +276,11 @@
           <button id="btnRestart" class="btn btn-accent full-width mt hidden">再来一局</button>
         </section>
 
-        <!-- 日志 -->
-        <section class="log-section">
+          </main><!-- end .room-main -->
+        </div><!-- end .room-body -->
+
+        <!-- 日志 (mobile) -->
+        <section class="log-section log-mobile">
           <details>
             <summary class="log-toggle">事件记录</summary>
             <div id="logContent" class="log-body"></div>

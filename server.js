@@ -126,7 +126,8 @@ function getRoomState(room, playerId) {
     settings: room.settings,
     currentSpeaker: room.phase === 'day' ? room.dayDiscussionOrder[room.currentSpeaker] : null,
     gameLog: room.gameLog,
-    timerEnd: room.timerEnd
+    timerEnd: room.timerEnd,
+    blankGuessPlayer: room.blankGuessPlayer || null
   };
 }
 
@@ -416,6 +417,7 @@ function startVotePhase(room) {
 function resolveVote(room) {
   const voteCount = new Map();
   for (const [_, targetId] of room.votes) {
+    if (targetId === null) continue; // 弃权不计入
     voteCount.set(targetId, (voteCount.get(targetId) || 0) + 1);
   }
 
@@ -436,6 +438,24 @@ function resolveVote(room) {
     if (eliminated) {
       eliminated.alive = false;
       room.gameLog.push({ type: 'vote', message: `${eliminated.name} 被投票淘汰了（${maxVotes}票）` });
+
+      // 白板被投出 + 卧底已全灭 → 进入猜词阶段
+      const undercoverAlive = Array.from(room.players.values()).filter(p => p.alive && p.role === 'undercover');
+      if (eliminated.role === 'blank' && undercoverAlive.length === 0) {
+        room.phase = 'blankGuess';
+        room.blankGuessPlayer = maxTargets[0];
+        clearRoomTimer(room);
+        room.gameLog.push({ type: 'phase', message: `${eliminated.name} 是白板！可以猜词翻盘！` });
+        setRoomTimer(room, 60, () => {
+          if (room.phase !== 'blankGuess') return;
+          // 超时未猜 → 好人胜
+          room.gameLog.push({ type: 'end', message: '⏱ 白板猜词超时，好人阵营胜利！' });
+          room.phase = 'ended';
+          broadcastRoomState(room);
+        });
+        broadcastRoomState(room);
+        return;
+      }
     }
   } else {
     room.gameLog.push({ type: 'vote', message: '平票，无人被淘汰' });
@@ -452,31 +472,40 @@ function checkWinCondition(room) {
   const alive = Array.from(room.players.values()).filter(p => p.alive);
   const undercoverAlive = alive.filter(p => p.role === 'undercover');
   const blankAlive = alive.filter(p => p.role === 'blank');
-  const nonUndercoverAlive = alive.filter(p => p.role !== 'undercover');
+  const goodAlive = alive.filter(p => p.role === 'good' || p.role === 'angel');
 
-  // 白板胜利：白板存活且场上只剩≤2人（含白板自己）
-  if (blankAlive.length > 0 && alive.length <= 2) {
+  // 白板胜利：所有好人和卧底都死了，只剩白板
+  if (blankAlive.length > 0 && undercoverAlive.length === 0 && goodAlive.length === 0) {
     room.phase = 'ended';
     clearRoomTimer(room);
-    room.gameLog.push({ type: 'end', message: '🃏 白板胜利！白板活到了最终局！' });
+    room.gameLog.push({ type: 'end', message: '🃏 白板胜利！好人和卧底全军覆没！' });
     broadcastRoomState(room);
     return true;
   }
 
-  // 卧底胜利：所有非卧底都死了
-  if (undercoverAlive.length > 0 && nonUndercoverAlive.length === 0) {
+  // 卧底胜利：卧底人数 >= 其他存活玩家人数
+  if (undercoverAlive.length > 0 && undercoverAlive.length >= alive.length - undercoverAlive.length) {
     room.phase = 'ended';
     clearRoomTimer(room);
-    room.gameLog.push({ type: 'end', message: '😈 卧底阵营胜利！所有非卧底已被淘汰！' });
+    room.gameLog.push({ type: 'end', message: '😈 卧底阵营胜利！卧底人数已不少于其他玩家！' });
     broadcastRoomState(room);
     return true;
   }
 
-  // 好人胜利：所有卧底被淘汰（且白板未触发胜利）
-  if (undercoverAlive.length === 0) {
+  // 好人胜利：所有卧底和白板都被淘汰
+  if (undercoverAlive.length === 0 && blankAlive.length === 0 && goodAlive.length > 0) {
     room.phase = 'ended';
     clearRoomTimer(room);
-    room.gameLog.push({ type: 'end', message: '🎉 好人阵营胜利！所有卧底已被淘汰！' });
+    room.gameLog.push({ type: 'end', message: '🎉 好人阵营胜利！卧底和白板已全部淘汰！' });
+    broadcastRoomState(room);
+    return true;
+  }
+
+  // 平局：所有人都死了
+  if (alive.length === 0) {
+    room.phase = 'ended';
+    clearRoomTimer(room);
+    room.gameLog.push({ type: 'end', message: '💀 全军覆没！无人生还，平局！' });
     broadcastRoomState(room);
     return true;
   }
@@ -641,6 +670,11 @@ io.on('connection', (socket) => {
         if (targetId === oldSocketId) {
           room.votes.set(voterId, newSocketId);
         }
+      }
+
+      // 更新白板猜词玩家
+      if (room.blankGuessPlayer === oldSocketId) {
+        room.blankGuessPlayer = newSocketId;
       }
 
       // 更新发言顺序
@@ -877,13 +911,15 @@ io.on('connection', (socket) => {
     const player = currentRoom.players.get(socket.id);
     if (!player || !player.alive) return;
 
-    if (targetId === socket.id) return; // 不能投自己
-
-    // 验证目标存活
-    const target = currentRoom.players.get(targetId);
-    if (!target || !target.alive) return;
-
-    currentRoom.votes.set(socket.id, targetId);
+    // 弃权：targetId 为 null
+    if (targetId === null) {
+      currentRoom.votes.set(socket.id, null);
+    } else {
+      if (targetId === socket.id) return; // 不能投自己
+      const target = currentRoom.players.get(targetId);
+      if (!target || !target.alive) return;
+      currentRoom.votes.set(socket.id, targetId);
+    }
 
     // 检查是否所有存活玩家都已投票
     const alivePlayers = Array.from(currentRoom.players.entries())
@@ -904,6 +940,35 @@ io.on('connection', (socket) => {
       clearRoomTimer(currentRoom);
       resolveVote(currentRoom);
     }
+  });
+
+  // 白板猜词
+  socket.on('submitBlankGuess', (data) => {
+    if (!currentRoom || currentRoom.phase !== 'blankGuess') return;
+    if (currentRoom.blankGuessPlayer !== socket.id) return;
+
+    const { wordA, wordB } = data || {};
+    if (!wordA || !wordB || typeof wordA !== 'string' || typeof wordB !== 'string') {
+      socket.emit('error', '请输入两个词');
+      return;
+    }
+
+    clearRoomTimer(currentRoom);
+    const guessA = wordA.trim();
+    const guessB = wordB.trim();
+    const correct =
+      (guessA === currentRoom.goodWord && guessB === currentRoom.badWord) ||
+      (guessA === currentRoom.badWord && guessB === currentRoom.goodWord);
+
+    if (correct) {
+      currentRoom.phase = 'ended';
+      currentRoom.gameLog.push({ type: 'end', message: `🃏 白板猜词正确！（${guessA} / ${guessB}）白板独自胜利！` });
+    } else {
+      currentRoom.phase = 'ended';
+      currentRoom.gameLog.push({ type: 'end', message: `❌ 白板猜词错误（猜：${guessA} / ${guessB}），好人阵营胜利！` });
+    }
+    currentRoom.blankGuessPlayer = null;
+    broadcastRoomState(currentRoom);
   });
 
   socket.on('sendMessage', (message) => {
@@ -939,6 +1004,7 @@ io.on('connection', (socket) => {
     currentRoom.votes.clear();
     currentRoom.gameLog = [];
     currentRoom.angelWords = null;
+    currentRoom.blankGuessPlayer = null;
     broadcastRoomState(currentRoom);
   });
 
