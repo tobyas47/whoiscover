@@ -215,6 +215,20 @@ body::before {
   background: var(--bg-warm);
 }
 
+.btn-sm {
+  padding: 4px 10px;
+  font-size: 0.75rem;
+  border-radius: var(--radius-sm);
+}
+.btn-danger {
+  background: #e74c3c;
+  color: #fff;
+  border: none;
+}
+.btn-danger:hover {
+  background: #c0392b;
+}
+
 .btn-send {
   width: 40px;
   height: 40px;
@@ -753,6 +767,28 @@ body::before {
   color: var(--jade) !important;
   border-color: var(--jade) !important;
   cursor: default;
+}
+
+/* Toast notification */
+#toast {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%) translateY(20px);
+  background: var(--ink);
+  color: var(--paper);
+  padding: 10px 20px;
+  border-radius: var(--radius);
+  font-size: 0.85rem;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.3s, transform 0.3s;
+  z-index: 9999;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+}
+#toast.show {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
 }
 
 /* Settings */

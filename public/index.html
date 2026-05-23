@@ -107,6 +107,7 @@
             <button class="btn-copy" id="btnCopyLink" title="复制邀请链接">🔗</button>
           </div>
           <div class="room-bar-right">
+            <button id="btnForceRestart" class="btn btn-sm btn-danger hidden" title="重新开始">↻ 重开</button>
             <span id="spectatorBadge" class="spectator-badge hidden">👁 观战中</span>
             <div class="phase-pill" id="phaseBadge"></div>
             <div id="countdown" class="countdown hidden"></div>
@@ -213,6 +214,13 @@
               <div class="setting-row">
                 <span>画画时长</span>
                 <select id="settingDgTimer"><option value="40">40秒</option><option value="60">60秒</option><option value="80" selected>80秒</option><option value="100">100秒</option><option value="120">2分钟</option></select>
+              </div>
+              <div class="setting-divider"></div>
+              <div id="dgUploadArea">
+                <label class="upload-label">自定义词库（JSON数组）</label>
+                <input type="file" id="dgWordFileInput" accept=".json">
+                <span id="dgUploadStatus" class="upload-status"></span>
+                <p class="upload-hint">格式：["词1", "词2", "词3", ...]</p>
               </div>
             </div>
             <!-- 卧底设置 -->

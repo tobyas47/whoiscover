@@ -142,6 +142,33 @@ socket.on('uploadWordsOk', (count) => {
   status.textContent = `✓ 已加载 ${count} 组词对`;
   status.classList.add('upload-success');
   setTimeout(() => status.classList.remove('upload-success'), 2000);
+  // 自动切换到上传词库
+  $('#settingWordSource').value = 'upload';
+  $('#uploadArea').classList.remove('hidden');
+});
+
+// 你画我猜词库上传
+$('#dgWordFileInput').addEventListener('change', (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  $('#dgUploadStatus').textContent = '上传中...';
+  const reader = new FileReader();
+  reader.onload = (ev) => {
+    try {
+      const data = JSON.parse(ev.target.result);
+      socket.emit('uploadDgWords', data);
+    } catch {
+      $('#dgUploadStatus').textContent = '❌ JSON格式错误';
+    }
+  };
+  reader.readAsText(file);
+});
+
+socket.on('uploadDgWordsOk', (count) => {
+  const status = $('#dgUploadStatus');
+  status.textContent = `✓ 已加载 ${count} 个词`;
+  status.classList.add('upload-success');
+  setTimeout(() => status.classList.remove('upload-success'), 2000);
 });
 
 // ============ Angel Pick ============
@@ -204,8 +231,35 @@ function sendMsg() {
 
 $('#btnEndDiscussion').addEventListener('click', () => socket.emit('endDiscussion'));
 $('#btnRestart').addEventListener('click', () => socket.emit('restartGame'));
-$('#btnDayReady').addEventListener('click', () => socket.emit('confirmReady'));
-$('#btnDrawReady').addEventListener('click', () => socket.emit('confirmReady'));
+$('#btnForceRestart').addEventListener('click', () => {
+  if (confirm('确定要重新开始游戏吗？')) socket.emit('restartGame');
+});
+
+function showToast(msg) {
+  let toast = document.getElementById('toast');
+  if (!toast) {
+    toast = document.createElement('div');
+    toast.id = 'toast';
+    document.body.appendChild(toast);
+  }
+  toast.textContent = msg;
+  toast.classList.add('show');
+  setTimeout(() => toast.classList.remove('show'), 2500);
+}
+$('#btnDayReady').addEventListener('click', () => {
+  socket.emit('confirmReady');
+  $('#btnDayReady').disabled = true;
+  $('#btnDayReady').textContent = '✓ 已确认';
+  $('#btnDayReady').classList.add('btn-confirmed');
+  showToast('已确认讨论完毕，等待其他玩家...');
+});
+$('#btnDrawReady').addEventListener('click', () => {
+  socket.emit('confirmReady');
+  $('#btnDrawReady').disabled = true;
+  $('#btnDrawReady').textContent = '✓ 已确认';
+  $('#btnDrawReady').classList.add('btn-confirmed');
+  showToast('已确认完成，等待其他玩家...');
+});
 
 // ============ Socket Events ============
 socket.on('connect', () => {
@@ -284,6 +338,11 @@ function render(state) {
   renderIdentity(state);
   renderPlayers(state);
   startCountdown(state.timerEnd);
+
+  // 房主重开按钮（非等待阶段显示）
+  const forceRestart = $('#btnForceRestart');
+  if (isHost && state.phase !== 'waiting') forceRestart.classList.remove('hidden');
+  else forceRestart.classList.add('hidden');
 
   // 观战者标识
   document.body.classList.toggle('spectator-mode', isSpectator);

@@ -99,6 +99,7 @@ function createRoom(hostId, hostName) {
     goodWord: '',
     badWord: '',
     customWordPairs: [],  // 上传的自定义词库
+    customDgWords: [],    // 你画我猜自定义词库
     angelWords: null,     // 天使出的词 {wordA, wordB}
     nightActions: new Map(), // socketId -> targetId
     votes: new Map(), // voterId -> targetId
@@ -888,7 +889,19 @@ io.on('connection', (socket) => {
     ).map(p => [p[0].trim(), p[1].trim()]);
     if (valid.length === 0) return socket.emit('error', '词库中没有有效词对');
     currentRoom.customWordPairs = valid;
+    currentRoom.settings.wordSource = 'upload';
     socket.emit('uploadWordsOk', valid.length);
+    broadcastRoomState(currentRoom);
+  });
+
+  socket.on('uploadDgWords', (data) => {
+    if (!currentRoom || currentRoom.hostId !== socket.id) return;
+    if (currentRoom.phase !== 'waiting') return;
+    if (!Array.isArray(data)) return socket.emit('error', '词库格式错误');
+    const valid = data.filter(w => typeof w === 'string' && w.trim()).map(w => w.trim());
+    if (valid.length < 3) return socket.emit('error', '词库至少需要3个词');
+    currentRoom.customDgWords = valid;
+    socket.emit('uploadDgWordsOk', valid.length);
     broadcastRoomState(currentRoom);
   });
 
@@ -1250,8 +1263,9 @@ io.on('connection', (socket) => {
 
   socket.on('restartGame', () => {
     if (!currentRoom || currentRoom.hostId !== socket.id) return;
-    if (currentRoom.phase !== 'ended') return;
+    if (currentRoom.phase === 'waiting') return;
 
+    clearRoomTimer(currentRoom);
     // 重置所有玩家状态
     for (const [_, player] of currentRoom.players) {
       player.alive = true;
@@ -1267,6 +1281,11 @@ io.on('connection', (socket) => {
     currentRoom.blankGuessPlayer = null;
     currentRoom.canvasData.clear();
     currentRoom.gallery = [];
+    currentRoom.readyPlayers.clear();
+    currentRoom.dg.scores = new Map();
+    currentRoom.dg.strokes = [];
+    currentRoom.dg.currentWord = '';
+    currentRoom.dg.guessedPlayers = new Set();
     broadcastRoomState(currentRoom);
   });
 
@@ -1375,8 +1394,9 @@ io.on('connection', (socket) => {
 });
 
 // ============ 你画我猜 游戏逻辑 ============
-function dgPickRandomWords(count = 3) {
-  const shuffled = [...drawGuessWords].sort(() => Math.random() - 0.5);
+function dgPickRandomWords(room, count = 3) {
+  const pool = room.customDgWords.length > 0 ? room.customDgWords : drawGuessWords;
+  const shuffled = [...pool].sort(() => Math.random() - 0.5);
   return shuffled.slice(0, count);
 }
 
@@ -1397,7 +1417,7 @@ function dgStartGame(room) {
 function dgStartPicking(room) {
   const dg = room.dg;
   room.phase = 'dgPicking';
-  dg.wordChoices = dgPickRandomWords(3);
+  dg.wordChoices = dgPickRandomWords(room, 3);
   dg.currentWord = '';
   dg.guessedPlayers = new Set();
   dg.strokes = [];
