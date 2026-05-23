@@ -123,12 +123,14 @@ $('#settingWordSource').addEventListener('change', () => {
 $('#wordFileInput').addEventListener('change', (e) => {
   const file = e.target.files[0];
   if (!file) return;
+  $('#uploadStatus').textContent = '上传中...';
   const reader = new FileReader();
   reader.onload = (ev) => {
     try {
       const data = JSON.parse(ev.target.result);
       socket.emit('uploadWords', data);
     } catch {
+      $('#uploadStatus').textContent = '❌ JSON格式错误';
       alert('JSON文件格式错误');
     }
   };
@@ -136,7 +138,10 @@ $('#wordFileInput').addEventListener('change', (e) => {
 });
 
 socket.on('uploadWordsOk', (count) => {
-  $('#uploadStatus').textContent = `✓ 已加载 ${count} 组词对`;
+  const status = $('#uploadStatus');
+  status.textContent = `✓ 已加载 ${count} 组词对`;
+  status.classList.add('upload-success');
+  setTimeout(() => status.classList.remove('upload-success'), 2000);
 });
 
 // ============ Angel Pick ============
@@ -156,7 +161,9 @@ $('#btnSubmitBlankGuess').addEventListener('click', () => {
 });
 
 function syncSettings() {
+  const mode = $('#settingMode').value;
   socket.emit('updateSettings', {
+    mode,
     undercoverCount: +$('#settingUndercover').value,
     angelCount: +$('#settingAngel').value,
     blankCount: +$('#settingBlank').value,
@@ -165,9 +172,15 @@ function syncSettings() {
     nightTimer: +$('#settingNightTimer').value,
     voteTimer: +$('#settingVoteTimer').value,
     drawEnabled: $('#settingDrawEnabled').value === '1',
-    drawTimer: +$('#settingDrawTimer').value
+    drawTimer: +$('#settingDrawTimer').value,
+    dgMaxRounds: +($('#settingDgRounds')?.value || 2),
+    dgDrawTimer: +($('#settingDgTimer')?.value || 80)
   });
 }
+
+$('#settingMode').addEventListener('change', syncSettings);
+$('#settingDgRounds')?.addEventListener('change', syncSettings);
+$('#settingDgTimer')?.addEventListener('change', syncSettings);
 
 // ============ Night ============
 $('#btnSkipNight').addEventListener('click', () => {
@@ -191,6 +204,8 @@ function sendMsg() {
 
 $('#btnEndDiscussion').addEventListener('click', () => socket.emit('endDiscussion'));
 $('#btnRestart').addEventListener('click', () => socket.emit('restartGame'));
+$('#btnDayReady').addEventListener('click', () => socket.emit('confirmReady'));
+$('#btnDrawReady').addEventListener('click', () => socket.emit('confirmReady'));
 
 // ============ Socket Events ============
 socket.on('connect', () => {
@@ -248,7 +263,17 @@ socket.on('voteProgress', (d) => {
 });
 
 socket.on('chatMessage', (d) => {
+  // Day chat (undercover mode)
   appendChat(d.name, d.message);
+  // DG chat
+  const dgBox = $('#dgChatBox');
+  if (dgBox && !$('#dgGamePanel').classList.contains('hidden')) {
+    const div = document.createElement('div');
+    div.className = 'chat-bubble';
+    div.innerHTML = `<span class="chat-name">${esc(d.name)}</span> ${esc(d.message)}`;
+    dgBox.appendChild(div);
+    dgBox.scrollTop = dgBox.scrollHeight;
+  }
 });
 
 socket.on('error', (msg) => alert(msg));
@@ -264,7 +289,7 @@ function render(state) {
   document.body.classList.toggle('spectator-mode', isSpectator);
 
   // Hide all panels
-  ['nightPanel','dayPanel','votePanel','waitingPanel','endPanel','angelPickPanel','blankGuessPanel','drawPanel','galleryPanel'].forEach(id => {
+  ['nightPanel','dayPanel','votePanel','waitingPanel','endPanel','angelPickPanel','blankGuessPanel','drawPanel','galleryPanel','dgPickPanel','dgGamePanel','dgEndPanel'].forEach(id => {
     $(`#${id}`).classList.add('hidden');
   });
 
@@ -285,6 +310,10 @@ function render(state) {
     case 'vote': renderVote(state); break;
     case 'blankGuess': renderBlankGuess(state); break;
     case 'ended': renderEnd(state); break;
+    case 'dgPicking': renderDgPicking(state); break;
+    case 'dgDrawing': renderDgDrawing(state); break;
+    case 'dgReveal': renderDgReveal(state); break;
+    case 'dgEnded': renderDgEnded(state); break;
   }
 
   // Show gallery during day/vote/ended if available (not during draw)
@@ -302,9 +331,9 @@ function render(state) {
 }
 
 function renderPhase(state) {
-  const names = { waiting: '等待中', angelPick: '天使出词', night: '夜晚', draw: '画画', day: '白天', vote: '投票', blankGuess: '白板猜词', ended: '结束' };
+  const names = { waiting: '等待中', angelPick: '天使出词', night: '夜晚', draw: '画画', day: '白天', vote: '投票', blankGuess: '白板猜词', ended: '结束', dgPicking: '选词', dgDrawing: '画画', dgReveal: '揭晓', dgEnded: '结束' };
   const badge = $('#phaseBadge');
-  badge.textContent = names[state.phase];
+  badge.textContent = names[state.phase] || state.phase;
   badge.className = `phase-pill phase-${state.phase}`;
   $('#roundInfo').textContent = state.round > 0 ? `第${state.round}轮` : '';
 }
@@ -312,6 +341,13 @@ function renderPhase(state) {
 function renderIdentity(state) {
   const me = state.players.find(p => p.id === myId);
   const card = $('#playerCard');
+
+  // Hide in draw-guess mode
+  if (state.mode === 'drawguess') {
+    card.classList.add('hidden');
+    return;
+  }
+
   if (me && me.role && state.phase !== 'waiting') {
     card.classList.remove('hidden');
 
@@ -368,22 +404,33 @@ function renderPlayers(state) {
 
 function renderWaiting(state) {
   $('#waitingPanel').classList.remove('hidden');
+  const mode = state.mode || 'undercover';
+
   if (isHost) {
     $('#settingsPanel').classList.remove('hidden');
     $('#waitingHint').classList.add('hidden');
-    $('#settingUndercover').value = state.settings.undercoverCount;
-    $('#settingAngel').value = state.settings.angelCount;
-    $('#settingBlank').value = state.settings.blankCount;
-    $('#settingWordSource').value = state.settings.wordSource;
-    $('#uploadArea').classList.toggle('hidden', state.settings.wordSource !== 'upload');
-    $('#settingDayTimer').value = state.settings.dayTimer;
-    $('#settingNightTimer').value = state.settings.nightTimer;
-    $('#settingVoteTimer').value = state.settings.voteTimer;
-    $('#settingDrawEnabled').value = state.settings.drawEnabled ? '1' : '0';
-    $('#settingDrawTimer').value = state.settings.drawTimer;
+    $('#settingMode').value = mode;
+
+    // Show/hide mode-specific settings
+    $('#ucSettings').classList.toggle('hidden', mode === 'drawguess');
+    $('#dgSettings').classList.toggle('hidden', mode !== 'drawguess');
+
+    if (mode === 'undercover') {
+      $('#settingUndercover').value = state.settings.undercoverCount;
+      $('#settingAngel').value = state.settings.angelCount;
+      $('#settingBlank').value = state.settings.blankCount;
+      $('#settingWordSource').value = state.settings.wordSource;
+      $('#uploadArea').classList.toggle('hidden', state.settings.wordSource !== 'upload');
+      $('#settingDayTimer').value = state.settings.dayTimer;
+      $('#settingNightTimer').value = state.settings.nightTimer;
+      $('#settingVoteTimer').value = state.settings.voteTimer;
+      $('#settingDrawEnabled').value = state.settings.drawEnabled ? '1' : '0';
+      $('#settingDrawTimer').value = state.settings.drawTimer;
+    }
   } else {
     $('#settingsPanel').classList.add('hidden');
     $('#waitingHint').classList.remove('hidden');
+    $('#waitingHint').textContent = mode === 'drawguess' ? '等待房主开始 · 你画我猜' : '等待房主开始...';
   }
 }
 
@@ -475,6 +522,20 @@ function renderDay(state) {
   const send = $('#btnSend');
   if (!me || !me.alive) { input.disabled = true; send.disabled = true; }
   else { input.disabled = false; send.disabled = false; }
+
+  // Ready state
+  const readyBtn = $('#btnDayReady');
+  const readyCount = $('#dayReadyCount');
+  if (state.iReady) {
+    readyBtn.disabled = true;
+    readyBtn.textContent = '✓ 已确认';
+    readyBtn.classList.add('btn-confirmed');
+  } else {
+    readyBtn.disabled = !me || !me.alive;
+    readyBtn.textContent = '✓ 讨论完毕';
+    readyBtn.classList.remove('btn-confirmed');
+  }
+  readyCount.textContent = `${state.readyCount}/${state.readyTotal}`;
 }
 
 function renderVote(state) {
@@ -903,6 +964,20 @@ function renderDraw(state) {
       }
     });
   }
+
+  // Ready state
+  const readyBtn = $('#btnDrawReady');
+  const readyCount = $('#drawReadyCount');
+  if (state.iReady) {
+    readyBtn.disabled = true;
+    readyBtn.textContent = '✓ 已确认';
+    readyBtn.classList.add('btn-confirmed');
+  } else {
+    readyBtn.disabled = false;
+    readyBtn.textContent = '✓ 画好了';
+    readyBtn.classList.remove('btn-confirmed');
+  }
+  readyCount.textContent = `${state.readyCount}/${state.readyTotal}`;
 }
 
 // ============ Gallery ============
@@ -940,3 +1015,265 @@ $('#galleryModal').querySelector('.gallery-modal-backdrop').addEventListener('cl
   $('#galleryModal').classList.add('hidden');
 });
 
+// ============================================================
+// 你画我猜 (Draw & Guess) Client Logic
+// ============================================================
+const dgCanvas = document.getElementById('dgCanvas');
+const dgCtx = dgCanvas ? dgCanvas.getContext('2d') : null;
+let dgIsDrawer = false;
+let dgDrawing = false;
+let dgColor = '#1e1e1e';
+let dgSize = 5;
+let dgTool = 'pen'; // 'pen' | 'eraser'
+let dgCurrentStroke = null;
+
+// Init DG canvas
+if (dgCtx) {
+  dgCtx.fillStyle = '#ffffff';
+  dgCtx.fillRect(0, 0, dgCanvas.width, dgCanvas.height);
+  dgCtx.lineCap = 'round';
+  dgCtx.lineJoin = 'round';
+}
+
+function dgClearCanvas() {
+  if (!dgCtx) return;
+  dgCtx.fillStyle = '#ffffff';
+  dgCtx.fillRect(0, 0, dgCanvas.width, dgCanvas.height);
+}
+
+function dgDrawStrokeOnCanvas(stroke) {
+  if (!dgCtx || !stroke || !stroke.points || stroke.points.length < 2) return;
+  dgCtx.save();
+  dgCtx.strokeStyle = stroke.tool === 'eraser' ? '#ffffff' : stroke.color;
+  dgCtx.lineWidth = stroke.size;
+  dgCtx.lineCap = 'round';
+  dgCtx.lineJoin = 'round';
+  dgCtx.beginPath();
+  dgCtx.moveTo(stroke.points[0].x, stroke.points[0].y);
+  for (let i = 1; i < stroke.points.length; i++) {
+    dgCtx.lineTo(stroke.points[i].x, stroke.points[i].y);
+  }
+  dgCtx.stroke();
+  dgCtx.restore();
+}
+
+// DG canvas pointer events (only when drawer)
+if (dgCanvas) {
+  function dgGetPos(e) {
+    const rect = dgCanvas.getBoundingClientRect();
+    return {
+      x: (e.clientX - rect.left) * (dgCanvas.width / rect.width),
+      y: (e.clientY - rect.top) * (dgCanvas.height / rect.height)
+    };
+  }
+
+  dgCanvas.addEventListener('pointerdown', (e) => {
+    if (!dgIsDrawer) return;
+    dgDrawing = true;
+    dgCanvas.setPointerCapture(e.pointerId);
+    const pos = dgGetPos(e);
+    dgCurrentStroke = { tool: dgTool, color: dgColor, size: dgSize, points: [pos] };
+    dgCtx.beginPath();
+    dgCtx.moveTo(pos.x, pos.y);
+    dgCtx.strokeStyle = dgTool === 'eraser' ? '#ffffff' : dgColor;
+    dgCtx.lineWidth = dgSize;
+  });
+
+  dgCanvas.addEventListener('pointermove', (e) => {
+    if (!dgDrawing || !dgIsDrawer) return;
+    const pos = dgGetPos(e);
+    dgCurrentStroke.points.push(pos);
+    dgCtx.lineTo(pos.x, pos.y);
+    dgCtx.stroke();
+    dgCtx.beginPath();
+    dgCtx.moveTo(pos.x, pos.y);
+  });
+
+  dgCanvas.addEventListener('pointerup', (e) => {
+    if (!dgDrawing || !dgIsDrawer) return;
+    dgDrawing = false;
+    dgCanvas.releasePointerCapture(e.pointerId);
+    if (dgCurrentStroke && dgCurrentStroke.points.length > 1) {
+      socket.emit('dgStroke', dgCurrentStroke);
+    }
+    dgCurrentStroke = null;
+  });
+}
+
+// DG toolbar
+$('#dgBtnPen')?.addEventListener('click', () => {
+  dgTool = 'pen';
+  $('#dgBtnPen').classList.add('active');
+  $('#dgBtnEraser').classList.remove('active');
+});
+$('#dgBtnEraser')?.addEventListener('click', () => {
+  dgTool = 'eraser';
+  $('#dgBtnEraser').classList.add('active');
+  $('#dgBtnPen').classList.remove('active');
+});
+$('#dgBtnClear')?.addEventListener('click', () => {
+  dgClearCanvas();
+  socket.emit('dgClear');
+});
+$('#dgDrawSize')?.addEventListener('input', (e) => { dgSize = +e.target.value; });
+
+// DG color palette
+$$('#dgColorPalette .color-swatch').forEach(btn => {
+  btn.addEventListener('click', () => {
+    dgColor = btn.dataset.color;
+    $$('#dgColorPalette .color-swatch').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    dgTool = 'pen';
+    $('#dgBtnPen').classList.add('active');
+    $('#dgBtnEraser').classList.remove('active');
+  });
+});
+
+// DG chat (guessing)
+function dgSendGuess() {
+  const input = $('#dgChatInput');
+  const msg = input.value.trim();
+  if (!msg) return;
+  socket.emit('sendMessage', msg);
+  input.value = '';
+}
+$('#dgBtnSend')?.addEventListener('click', dgSendGuess);
+$('#dgChatInput')?.addEventListener('keypress', (e) => { if (e.key === 'Enter') dgSendGuess(); });
+
+// Receive strokes from server
+socket.on('dgStroke', (stroke) => {
+  dgDrawStrokeOnCanvas(stroke);
+});
+socket.on('dgClear', () => {
+  dgClearCanvas();
+});
+
+// DG restart
+$('#btnDgRestart')?.addEventListener('click', () => socket.emit('dgRestart'));
+
+// ============ DG Render Functions ============
+function renderDgPicking(state) {
+  const dg = state.dg;
+  if (!dg) return;
+
+  // Clear canvas for new turn
+  dgClearCanvas();
+  // Clear DG chat
+  const dgBox = $('#dgChatBox');
+  if (dgBox) dgBox.innerHTML = '';
+
+  if (dg.isDrawer) {
+    $('#dgPickPanel').classList.remove('hidden');
+    const choices = $('#dgWordChoices');
+    choices.innerHTML = '';
+    dg.wordChoices.forEach(word => {
+      const btn = document.createElement('button');
+      btn.className = 'btn btn-ghost dg-choice-btn';
+      btn.textContent = word;
+      btn.addEventListener('click', () => socket.emit('dgPickWord', word));
+      choices.appendChild(btn);
+    });
+    $('#dgPickWait').classList.add('hidden');
+  } else {
+    $('#dgPickPanel').classList.remove('hidden');
+    $('#dgWordChoices').innerHTML = '';
+    $('#dgPickWait').classList.remove('hidden');
+    const drawerPlayer = state.players.find(p => p.id === dg.currentDrawer);
+    $('#dgPickWait').textContent = `${drawerPlayer?.name || '?'} 正在选词...`;
+  }
+}
+
+function renderDgDrawing(state) {
+  const dg = state.dg;
+  if (!dg) return;
+
+  $('#dgGamePanel').classList.remove('hidden');
+  dgIsDrawer = dg.isDrawer;
+
+  // Word display
+  if (dg.isDrawer) {
+    $('#dgWordLabel').textContent = dg.word;
+    $('#dgWordHint').textContent = '';
+    $('#dgToolbar').classList.remove('hidden');
+    $('#dgColorPalette').classList.remove('hidden');
+    dgCanvas.style.cursor = 'crosshair';
+    $('#dgChatInput').disabled = true;
+    $('#dgChatInput').placeholder = '你是画手，不能猜';
+  } else {
+    $('#dgWordLabel').textContent = '';
+    $('#dgWordHint').textContent = dg.wordHint + ` (${dg.wordLength}字)`;
+    $('#dgToolbar').classList.add('hidden');
+    $('#dgColorPalette').classList.add('hidden');
+    dgCanvas.style.cursor = 'default';
+    const guessed = dg.guessedPlayers.includes(myId);
+    $('#dgChatInput').disabled = guessed;
+    $('#dgChatInput').placeholder = guessed ? '✓ 你已猜对！' : '输入你的猜测...';
+  }
+
+  // Drawer name
+  const drawerPlayer = state.players.find(p => p.id === dg.currentDrawer);
+  $('#dgDrawerName').textContent = `画手: ${drawerPlayer?.name || '?'} · 第${dg.roundNum}/${dg.maxRounds}轮`;
+
+  // Scoreboard
+  renderDgScoreboard(state);
+}
+
+function renderDgReveal(state) {
+  const dg = state.dg;
+  if (!dg) return;
+
+  $('#dgGamePanel').classList.remove('hidden');
+  dgIsDrawer = false;
+  $('#dgWordLabel').textContent = `答案: ${dg.word || state.gameLog[state.gameLog.length-1]?.message?.replace('答案是：','') || ''}`;
+  $('#dgWordHint').textContent = '';
+  $('#dgToolbar').classList.add('hidden');
+  $('#dgColorPalette').classList.add('hidden');
+  $('#dgChatInput').disabled = true;
+  $('#dgChatInput').placeholder = '等待下一轮...';
+  dgCanvas.style.cursor = 'default';
+
+  renderDgScoreboard(state);
+}
+
+function renderDgEnded(state) {
+  const dg = state.dg;
+  if (!dg) return;
+
+  $('#dgEndPanel').classList.remove('hidden');
+  const scores = dg.scores.sort((a, b) => b.score - a.score);
+  const container = $('#dgFinalScores');
+  container.innerHTML = '';
+  scores.forEach((s, i) => {
+    const player = state.players.find(p => p.id === s.id);
+    const div = document.createElement('div');
+    div.className = 'dg-score-row' + (i === 0 ? ' dg-winner' : '');
+    const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i+1}.`;
+    div.innerHTML = `<span class="dg-rank">${medal}</span><span class="dg-name">${esc(player?.name || '?')}</span><span class="dg-pts">${s.score}分</span>`;
+    container.appendChild(div);
+  });
+
+  if (isHost) $('#btnDgRestart').classList.remove('hidden');
+  else $('#btnDgRestart').classList.add('hidden');
+}
+
+function renderDgScoreboard(state) {
+  const dg = state.dg;
+  if (!dg) return;
+  const container = $('#dgScoreboard');
+  if (!container) return;
+  const scores = dg.scores.sort((a, b) => b.score - a.score);
+  container.innerHTML = scores.map(s => {
+    const player = state.players.find(p => p.id === s.id);
+    const isDrawer = s.id === dg.currentDrawer;
+    const guessed = dg.guessedPlayers.includes(s.id);
+    let status = '';
+    if (isDrawer) status = '🎨';
+    else if (guessed) status = '✓';
+    return `<div class="dg-sb-row${guessed ? ' guessed' : ''}${isDrawer ? ' drawing' : ''}"><span>${status} ${esc(player?.name || '?')}</span><span>${s.score}</span></div>`;
+  }).join('');
+}
+
+// Handle DG canvas clear on new turn
+socket.on('dgNewTurn', () => {
+  dgClearCanvas();
+});

@@ -31,7 +31,7 @@ const RECONNECT_GRACE = 30000; // 30秒断线重连窗口
 const MAX_LOG_ENTRIES = 100; // 游戏日志上限
 const ROOM_IDLE_TIMEOUT = 30 * 60 * 1000; // 30分钟无活动房间清理
 
-// 预设词库
+// 预设词库（卧底模式）
 const wordPairs = [
   ['五条悟', '甚尔'],
   ['电锯人', '咒术回战'],
@@ -55,6 +55,23 @@ const wordPairs = [
   ['新番', '完结撒花']
 ];
 
+// 你画我猜词库
+const drawGuessWords = [
+  '苹果', '香蕉', '西瓜', '草莓', '葡萄', '橙子', '樱桃', '菠萝',
+  '猫', '狗', '兔子', '大象', '长颈鹿', '企鹅', '熊猫', '老虎', '鲨鱼', '蝴蝶',
+  '太阳', '月亮', '星星', '彩虹', '闪电', '雪花', '火山', '海浪',
+  '飞机', '火箭', '自行车', '汽车', '轮船', '潜水艇', '热气球', '滑板',
+  '蛋糕', '冰淇淋', '汉堡', '披萨', '寿司', '拉面', '火锅', '奶茶',
+  '吉他', '钢琴', '耳机', '手机', '电脑', '相机', '电视', '游戏手柄',
+  '足球', '篮球', '乒乓球', '滑雪', '冲浪', '跳伞', '拳击', '游泳',
+  '城堡', '灯塔', '金字塔', '摩天轮', '过山车', '桥', '帐篷', '树屋',
+  '圣诞树', '气球', '礼物', '奖杯', '钻石', '皇冠', '魔法棒', '宝剑',
+  '医生', '宇航员', '海盗', '忍者', '厨师', '画家', '魔术师', '消防员',
+  '闹钟', '雨伞', '眼镜', '钥匙', '蜡烛', '剪刀', '锤子', '望远镜',
+  '恐龙', '独角兽', '龙', '美人鱼', '外星人', '机器人', '幽灵', '超人',
+  '向日葵', '仙人掌', '蘑菇', '四叶草', '竹子', '樱花', '玫瑰', '椰子树'
+];
+
 // ============ 房间管理 ============
 function createRoom(hostId, hostName) {
   let roomId;
@@ -64,6 +81,7 @@ function createRoom(hostId, hostName) {
   const room = {
     id: roomId,
     hostId: hostId,
+    mode: 'undercover', // 'undercover' | 'drawguess'
     players: new Map(), // socketId -> playerState
     phase: 'waiting', // waiting, night, day, vote, ended
     round: 0,
@@ -93,6 +111,20 @@ function createRoom(hostId, hostName) {
     spectators: new Map(), // socketId -> {id, name}
     canvasData: new Map(), // socketId -> base64 data URL
     gallery: [],           // [{name, dataUrl, playerId}]
+    readyPlayers: new Set(), // socketIds who confirmed ready
+    // 你画我猜模式状态
+    dg: {
+      scores: new Map(),       // playerId -> score
+      drawOrder: [],           // player IDs in draw order
+      currentIdx: 0,           // current drawer index
+      currentWord: '',         // word to draw
+      wordChoices: [],         // 3 choices for drawer
+      guessedPlayers: new Set(), // who guessed correctly this turn
+      roundNum: 1,
+      maxRounds: 2,
+      drawTimer: 80,
+      strokes: []              // [{tool, color, size, points}] for replay
+    },
     _lastActivity: Date.now()
   };
   rooms.set(roomId, room);
@@ -118,12 +150,14 @@ function getRoomState(room, playerId) {
       name: p.name,
       alive: p.alive,
       role: id === playerId ? p.role : (room.phase === 'ended' ? p.role : undefined),
-      word: id === playerId ? p.word : (room.phase === 'ended' ? p.word : undefined)
+      word: id === playerId ? p.word : (room.phase === 'ended' ? p.word : undefined),
+      score: room.dg.scores.get(id) || 0
     });
   }
-  return {
+  const state = {
     id: room.id,
     hostId: room.hostId,
+    mode: room.mode,
     phase: room.phase,
     round: room.round,
     players,
@@ -132,8 +166,32 @@ function getRoomState(room, playerId) {
     gameLog: room.gameLog,
     timerEnd: room.timerEnd,
     blankGuessPlayer: room.blankGuessPlayer || null,
-    gallery: room.gallery || []
+    gallery: room.gallery || [],
+    readyCount: room.readyPlayers ? room.readyPlayers.size : 0,
+    readyTotal: Array.from(room.players.values()).filter(p => p.alive).length,
+    iReady: room.readyPlayers ? room.readyPlayers.has(playerId) : false
   };
+
+  // 你画我猜额外状态
+  if (room.mode === 'drawguess') {
+    const dg = room.dg;
+    const isDrawer = dg.drawOrder[dg.currentIdx] === playerId;
+    state.dg = {
+      currentDrawer: dg.drawOrder[dg.currentIdx] || null,
+      isDrawer,
+      word: isDrawer ? dg.currentWord : '',
+      wordHint: dg.currentWord ? dg.currentWord.replace(/./g, '＿') : '',
+      wordLength: dg.currentWord ? dg.currentWord.length : 0,
+      wordChoices: isDrawer && room.phase === 'dgPicking' ? dg.wordChoices : [],
+      guessedPlayers: Array.from(dg.guessedPlayers),
+      roundNum: dg.roundNum,
+      maxRounds: dg.maxRounds,
+      drawTimer: dg.drawTimer,
+      scores: Array.from(dg.scores.entries()).map(([id, s]) => ({ id, score: s }))
+    };
+  }
+
+  return state;
 }
 
 // 天使出词模式：先分配所有角色（但不分配词语），然后等天使出词
@@ -379,6 +437,7 @@ function resolveNight(room) {
 
 function startDrawPhase(room) {
   room.phase = 'draw';
+  room.readyPlayers = new Set();
   room.gameLog.push({ type: 'phase', message: '🎨 画画时间！请在画布上自由创作' });
 
   setRoomTimer(room, room.settings.drawTimer, () => {
@@ -413,6 +472,7 @@ function finishDrawPhase(room) {
 
 function startDayPhase(room) {
   room.phase = 'day';
+  room.readyPlayers = new Set();
   room.votes.clear();
   // 随机决定发言顺序
   const alivePlayers = Array.from(room.players.entries())
@@ -777,6 +837,20 @@ io.on('connection', (socket) => {
     if (!currentRoom || currentRoom.hostId !== socket.id) return;
     if (currentRoom.phase !== 'waiting') return;
 
+    // 模式切换
+    if (settings.mode && ['undercover', 'drawguess'].includes(settings.mode)) {
+      currentRoom.mode = settings.mode;
+    }
+
+    // 你画我猜设置
+    if (currentRoom.mode === 'drawguess') {
+      const clamp = (v, min, max) => Math.max(min, Math.min(max, v || min));
+      currentRoom.dg.maxRounds = clamp(settings.dgMaxRounds, 1, 5);
+      currentRoom.dg.drawTimer = clamp(settings.dgDrawTimer, 30, 9999);
+      broadcastRoomState(currentRoom);
+      return;
+    }
+
     const total = currentRoom.players.size;
     const { undercoverCount, angelCount, blankCount, dayTimer, nightTimer, voteTimer } = settings;
 
@@ -840,6 +914,17 @@ io.on('connection', (socket) => {
   socket.on('startGame', () => {
     if (!currentRoom || currentRoom.hostId !== socket.id) return;
     if (currentRoom.phase !== 'waiting') return;
+
+    // 你画我猜模式
+    if (currentRoom.mode === 'drawguess') {
+      if (currentRoom.players.size < 2) {
+        socket.emit('error', '至少需要2名玩家');
+        return;
+      }
+      dgStartGame(currentRoom);
+      return;
+    }
+
     if (currentRoom.players.size < 4) {
       socket.emit('error', '至少需要4名玩家');
       return;
@@ -969,6 +1054,34 @@ io.on('connection', (socket) => {
     }
   });
 
+  // 确认完成（画画/讨论阶段）
+  socket.on('confirmReady', () => {
+    if (!currentRoom) return;
+    if (!['draw', 'day'].includes(currentRoom.phase)) return;
+    const player = currentRoom.players.get(socket.id);
+    if (!player || !player.alive) return;
+
+    currentRoom.readyPlayers.add(socket.id);
+
+    // 检查是否所有存活玩家都已确认
+    const aliveCount = Array.from(currentRoom.players.values()).filter(p => p.alive).length;
+    if (currentRoom.readyPlayers.size >= aliveCount) {
+      clearRoomTimer(currentRoom);
+      if (currentRoom.phase === 'draw') {
+        finishDrawPhase(currentRoom);
+      } else if (currentRoom.phase === 'day') {
+        if (currentRoom.round === 1) {
+          currentRoom.gameLog.push({ type: 'phase', message: '所有人确认完成，进入夜晚' });
+          startNightPhase(currentRoom);
+        } else {
+          startVotePhase(currentRoom);
+        }
+      }
+    } else {
+      broadcastRoomState(currentRoom);
+    }
+  });
+
   socket.on('vote', (targetId) => {
     if (!currentRoom || currentRoom.phase !== 'vote') return;
     const player = currentRoom.players.get(socket.id);
@@ -1037,18 +1150,84 @@ io.on('connection', (socket) => {
   socket.on('sendMessage', (message) => {
     if (rateLimit()) return;
     if (!currentRoom) return;
-    if (currentRoom.phase !== 'day') return;
     const player = currentRoom.players.get(socket.id);
-    if (!player || !player.alive) return;
+    if (!player) return;
 
     const sanitized = String(message || '').trim().substring(0, 200);
     if (!sanitized) return;
+
+    // 你画我猜模式：消息当猜测处理
+    if (currentRoom.mode === 'drawguess' && currentRoom.phase === 'dgDrawing') {
+      const isCorrect = dgHandleGuess(currentRoom, socket.id, sanitized);
+      if (isCorrect) return; // 猜对了不显示原文
+
+      // 广播普通猜测（非画手可发言）
+      if (socket.id !== currentRoom.dg.drawOrder[currentRoom.dg.currentIdx]) {
+        io.to(currentRoom.id).emit('chatMessage', {
+          name: player.name,
+          message: sanitized,
+          playerId: socket.id
+        });
+      }
+      return;
+    }
+
+    // 卧底模式：只在白天可聊天
+    if (currentRoom.mode !== 'drawguess') {
+      if (currentRoom.phase !== 'day') return;
+      if (!player.alive) return;
+    }
 
     io.to(currentRoom.id).emit('chatMessage', {
       name: player.name,
       message: sanitized,
       playerId: socket.id
     });
+  });
+
+  // 你画我猜：选词
+  socket.on('dgPickWord', (word) => {
+    if (!currentRoom || currentRoom.mode !== 'drawguess') return;
+    if (currentRoom.phase !== 'dgPicking') return;
+    const dg = currentRoom.dg;
+    if (socket.id !== dg.drawOrder[dg.currentIdx]) return;
+    if (!dg.wordChoices.includes(word)) return;
+    dg.currentWord = word;
+    dgStartDrawing(currentRoom);
+  });
+
+  // 你画我猜：广播画笔笔画
+  socket.on('dgStroke', (stroke) => {
+    if (!currentRoom || currentRoom.mode !== 'drawguess') return;
+    if (currentRoom.phase !== 'dgDrawing') return;
+    const dg = currentRoom.dg;
+    if (socket.id !== dg.drawOrder[dg.currentIdx]) return;
+    // 验证stroke结构
+    if (!stroke || typeof stroke !== 'object') return;
+    dg.strokes.push(stroke);
+    // 广播给其他人（除了画手自己）
+    socket.to(currentRoom.id).emit('dgStroke', stroke);
+  });
+
+  // 你画我猜：清空画布
+  socket.on('dgClear', () => {
+    if (!currentRoom || currentRoom.mode !== 'drawguess') return;
+    if (currentRoom.phase !== 'dgDrawing') return;
+    const dg = currentRoom.dg;
+    if (socket.id !== dg.drawOrder[dg.currentIdx]) return;
+    dg.strokes = [];
+    socket.to(currentRoom.id).emit('dgClear');
+  });
+
+  // 你画我猜：重新开始
+  socket.on('dgRestart', () => {
+    if (!currentRoom || currentRoom.mode !== 'drawguess') return;
+    if (currentRoom.hostId !== socket.id) return;
+    if (!['dgEnded', 'dgReveal', 'dgDrawing', 'dgPicking'].includes(currentRoom.phase)) return;
+    clearRoomTimer(currentRoom);
+    currentRoom.phase = 'waiting';
+    currentRoom.gameLog = [];
+    broadcastRoomState(currentRoom);
   });
 
   // 提交画布数据
@@ -1194,6 +1373,154 @@ io.on('connection', (socket) => {
     }
   });
 });
+
+// ============ 你画我猜 游戏逻辑 ============
+function dgPickRandomWords(count = 3) {
+  const shuffled = [...drawGuessWords].sort(() => Math.random() - 0.5);
+  return shuffled.slice(0, count);
+}
+
+function dgStartGame(room) {
+  const dg = room.dg;
+  dg.scores = new Map();
+  dg.drawOrder = Array.from(room.players.keys()).sort(() => Math.random() - 0.5);
+  dg.currentIdx = 0;
+  dg.roundNum = 1;
+  dg.guessedPlayers = new Set();
+  dg.strokes = [];
+  dg.currentWord = '';
+  for (const [id] of room.players) dg.scores.set(id, 0);
+  room.gameLog = [{ type: 'phase', message: '🎨 你画我猜开始！' }];
+  dgStartPicking(room);
+}
+
+function dgStartPicking(room) {
+  const dg = room.dg;
+  room.phase = 'dgPicking';
+  dg.wordChoices = dgPickRandomWords(3);
+  dg.currentWord = '';
+  dg.guessedPlayers = new Set();
+  dg.strokes = [];
+
+  const drawerName = room.players.get(dg.drawOrder[dg.currentIdx])?.name || '?';
+  room.gameLog.push({ type: 'phase', message: `轮到 ${drawerName} 画画，正在选词...` });
+
+  // 15秒不选自动选第一个
+  setRoomTimer(room, 15, () => {
+    if (room.phase !== 'dgPicking') return;
+    dg.currentWord = dg.wordChoices[0];
+    dgStartDrawing(room);
+  });
+
+  broadcastRoomState(room);
+}
+
+function dgStartDrawing(room) {
+  const dg = room.dg;
+  room.phase = 'dgDrawing';
+  dg.strokes = [];
+
+  const drawerName = room.players.get(dg.drawOrder[dg.currentIdx])?.name || '?';
+  room.gameLog.push({ type: 'phase', message: `${drawerName} 开始画画！(${dg.currentWord.length}个字)` });
+
+  setRoomTimer(room, dg.drawTimer, () => {
+    if (room.phase !== 'dgDrawing') return;
+    dgEndTurn(room);
+  });
+
+  broadcastRoomState(room);
+}
+
+function dgEndTurn(room) {
+  clearRoomTimer(room);
+  const dg = room.dg;
+  room.phase = 'dgReveal';
+
+  room.gameLog.push({ type: 'phase', message: `答案是：${dg.currentWord}` });
+
+  // 3秒展示答案后进入下一轮
+  setRoomTimer(room, 3, () => {
+    dgNextTurn(room);
+  });
+
+  broadcastRoomState(room);
+}
+
+function dgNextTurn(room) {
+  const dg = room.dg;
+  dg.currentIdx++;
+
+  if (dg.currentIdx >= dg.drawOrder.length) {
+    // 一轮结束
+    dg.currentIdx = 0;
+    dg.roundNum++;
+    if (dg.roundNum > dg.maxRounds) {
+      // 游戏结束
+      dgEndGame(room);
+      return;
+    }
+    // 重新打乱顺序
+    dg.drawOrder = dg.drawOrder.sort(() => Math.random() - 0.5);
+    room.gameLog.push({ type: 'phase', message: `第 ${dg.roundNum} 轮开始！` });
+  }
+
+  dgStartPicking(room);
+}
+
+function dgEndGame(room) {
+  room.phase = 'dgEnded';
+  clearRoomTimer(room);
+
+  // 排名
+  const sorted = Array.from(room.dg.scores.entries()).sort((a, b) => b[1] - a[1]);
+  const winnerName = room.players.get(sorted[0]?.[0])?.name || '?';
+  room.gameLog.push({ type: 'phase', message: `🏆 游戏结束！冠军：${winnerName}（${sorted[0]?.[1]}分）` });
+
+  broadcastRoomState(room);
+}
+
+function dgHandleGuess(room, socketId, text) {
+  const dg = room.dg;
+  if (room.phase !== 'dgDrawing') return false;
+  if (socketId === dg.drawOrder[dg.currentIdx]) return false; // drawer can't guess
+  if (dg.guessedPlayers.has(socketId)) return false; // already guessed
+
+  const player = room.players.get(socketId);
+  if (!player) return false;
+
+  const guess = text.trim().toLowerCase();
+  const answer = dg.currentWord.toLowerCase();
+
+  if (guess === answer) {
+    dg.guessedPlayers.add(socketId);
+
+    // 得分：越早猜到分越高
+    const totalGuessers = room.players.size - 1; // exclude drawer
+    const remaining = totalGuessers - dg.guessedPlayers.size;
+    const guessScore = Math.max(10, 50 - (dg.guessedPlayers.size - 1) * 10);
+    const drawScore = 10;
+
+    dg.scores.set(socketId, (dg.scores.get(socketId) || 0) + guessScore);
+    const drawerId = dg.drawOrder[dg.currentIdx];
+    dg.scores.set(drawerId, (dg.scores.get(drawerId) || 0) + drawScore);
+
+    room.gameLog.push({ type: 'correct', message: `${player.name} 猜对了！+${guessScore}分` });
+
+    // 所有人都猜对了，结束本轮
+    if (dg.guessedPlayers.size >= totalGuessers) {
+      dgEndTurn(room);
+    } else {
+      broadcastRoomState(room);
+    }
+    return true; // don't show the message in chat
+  }
+
+  // 接近答案提示
+  if (guess.length === answer.length && guess !== answer) {
+    // 广播普通猜测消息
+  }
+  return false;
+}
 
 // ============ 启动服务器 ============
 const PORT = process.env.PORT || 8080;

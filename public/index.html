@@ -168,6 +168,10 @@
             <input type="text" id="chatInput" placeholder="说点什么..." maxlength="200" autocomplete="off">
             <button id="btnSend" class="btn btn-send">↑</button>
           </div>
+          <div class="ready-bar">
+            <button id="btnDayReady" class="btn btn-ghost full-width">✓ 讨论完毕</button>
+            <span id="dayReadyCount" class="ready-count"></span>
+          </div>
           <button id="btnEndDiscussion" class="btn btn-accent full-width mt hidden">结束讨论 · 投票</button>
         </section>
 
@@ -192,6 +196,27 @@
             <h2>等待就绪</h2>
           </div>
           <div id="settingsPanel" class="settings hidden">
+            <div class="setting-row mode-switch">
+              <span>游戏模式</span>
+              <select id="settingMode">
+                <option value="undercover">谁是卧底</option>
+                <option value="drawguess">你画我猜</option>
+              </select>
+            </div>
+            <div class="setting-divider"></div>
+            <!-- 你画我猜设置 -->
+            <div id="dgSettings" class="hidden">
+              <div class="setting-row">
+                <span>回合数</span>
+                <select id="settingDgRounds"><option value="1">1轮</option><option value="2" selected>2轮</option><option value="3">3轮</option><option value="4">4轮</option><option value="5">5轮</option></select>
+              </div>
+              <div class="setting-row">
+                <span>画画时长</span>
+                <select id="settingDgTimer"><option value="40">40秒</option><option value="60">60秒</option><option value="80" selected>80秒</option><option value="100">100秒</option><option value="120">2分钟</option></select>
+              </div>
+            </div>
+            <!-- 卧底设置 -->
+            <div id="ucSettings">
             <div class="setting-row">
               <span>卧底</span>
               <select id="settingUndercover"><option value="1">1人</option><option value="2">2人</option><option value="3">3人</option></select>
@@ -243,6 +268,7 @@
               <span>画画时长</span>
               <select id="settingDrawTimer"><option value="60">60秒</option><option value="90" selected>90秒</option><option value="120">2分钟</option><option value="180">3分钟</option><option value="300">5分钟</option><option value="600">10分钟</option><option value="9999">不限时</option></select>
             </div>
+            </div><!-- end ucSettings -->
             <button id="btnStart" class="btn btn-accent full-width mt">开始游戏</button>
           </div>
           <p id="waitingHint" class="progress-hint">等待房主开始...</p>
@@ -283,6 +309,74 @@
           </div>
           <div id="endRoles" class="end-reveal"></div>
           <button id="btnRestart" class="btn btn-accent full-width mt hidden">再来一局</button>
+        </section>
+
+        <!-- 你画我猜：选词面板 -->
+        <section id="dgPickPanel" class="panel hidden">
+          <div class="panel-head">
+            <h2>🎨 选择一个词来画</h2>
+          </div>
+          <div id="dgWordChoices" class="dg-choices"></div>
+          <p id="dgPickWait" class="progress-hint hidden">等待画手选词...</p>
+        </section>
+
+        <!-- 你画我猜：画画/猜词面板 -->
+        <section id="dgGamePanel" class="panel hidden">
+          <div class="dg-header">
+            <div class="dg-word-display">
+              <span id="dgWordLabel" class="dg-word"></span>
+              <span id="dgWordHint" class="dg-hint"></span>
+            </div>
+            <div id="dgDrawerName" class="dg-drawer-name"></div>
+          </div>
+          <div class="dg-body">
+            <div class="dg-canvas-area">
+              <div class="canvas-toolbar" id="dgToolbar">
+                <div class="toolbar-group">
+                  <button id="dgBtnPen" class="tool-btn active" title="画笔">✏️</button>
+                  <button id="dgBtnEraser" class="tool-btn" title="橡皮擦">🧽</button>
+                  <button id="dgBtnClear" class="tool-btn" title="清空">🗑️</button>
+                </div>
+                <div class="toolbar-group">
+                  <input type="range" id="dgDrawSize" min="2" max="30" value="5" class="size-slider">
+                </div>
+              </div>
+              <div id="dgColorPalette" class="color-palette">
+                <button class="color-swatch active" data-color="#1e1e1e" style="background:#1e1e1e"></button>
+                <button class="color-swatch" data-color="#ffffff" style="background:#ffffff"></button>
+                <button class="color-swatch" data-color="#9b9b9b" style="background:#9b9b9b"></button>
+                <button class="color-swatch" data-color="#c0392b" style="background:#c0392b"></button>
+                <button class="color-swatch" data-color="#f39c12" style="background:#f39c12"></button>
+                <button class="color-swatch" data-color="#f1c40f" style="background:#f1c40f"></button>
+                <button class="color-swatch" data-color="#27ae60" style="background:#27ae60"></button>
+                <button class="color-swatch" data-color="#2980b9" style="background:#2980b9"></button>
+                <button class="color-swatch" data-color="#8e44ad" style="background:#8e44ad"></button>
+                <button class="color-swatch" data-color="#e91e63" style="background:#e91e63"></button>
+                <button class="color-swatch" data-color="#795548" style="background:#795548"></button>
+                <button class="color-swatch" data-color="#00bcd4" style="background:#00bcd4"></button>
+              </div>
+              <div class="canvas-wrap">
+                <canvas id="dgCanvas" width="800" height="600"></canvas>
+              </div>
+            </div>
+            <div class="dg-chat-area">
+              <div id="dgScoreboard" class="dg-scoreboard"></div>
+              <div id="dgChatBox" class="chat-scroll"></div>
+              <div class="chat-bar">
+                <input type="text" id="dgChatInput" placeholder="输入你的猜测..." maxlength="50" autocomplete="off">
+                <button id="dgBtnSend" class="btn btn-send">↑</button>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 你画我猜：结算面板 -->
+        <section id="dgEndPanel" class="panel hidden">
+          <div class="panel-head">
+            <h2>🏆 游戏结束</h2>
+          </div>
+          <div id="dgFinalScores" class="dg-final-scores"></div>
+          <button id="btnDgRestart" class="btn btn-accent full-width mt hidden">再来一局</button>
         </section>
 
         <!-- 画画面板 -->
@@ -326,6 +420,10 @@
           </div>
           <div class="canvas-wrap">
             <canvas id="drawCanvas" width="800" height="600"></canvas>
+          </div>
+          <div class="ready-bar">
+            <button id="btnDrawReady" class="btn btn-ghost full-width">✓ 画好了</button>
+            <span id="drawReadyCount" class="ready-count"></span>
           </div>
         </section>
 

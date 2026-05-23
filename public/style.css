@@ -440,8 +440,21 @@ body::before {
   padding: 6px 12px;
 }
 .upload-status {
-  font-size: 0.78rem;
+  font-size: 0.85rem;
   color: var(--jade);
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: var(--radius-sm);
+  transition: background 0.3s;
+}
+.upload-status.upload-success {
+  background: var(--jade-bg);
+  animation: flashSuccess 0.4s ease;
+}
+@keyframes flashSuccess {
+  0% { transform: scale(1); }
+  50% { transform: scale(1.05); }
+  100% { transform: scale(1); }
 }
 .upload-hint {
   width: 100%;
@@ -719,6 +732,27 @@ body::before {
 .chat-bar input:focus {
   border-color: var(--cinnabar-soft);
   box-shadow: 0 0 0 3px var(--cinnabar-bg);
+}
+
+/* Ready bar */
+.ready-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 10px;
+}
+.ready-bar .btn { flex: 1; }
+.ready-count {
+  font-size: 0.82rem;
+  color: var(--ink-muted);
+  white-space: nowrap;
+  font-weight: 600;
+}
+.btn-confirmed {
+  background: var(--jade-bg) !important;
+  color: var(--jade) !important;
+  border-color: var(--jade) !important;
+  cursor: default;
 }
 
 /* Settings */
@@ -1621,3 +1655,137 @@ body.night .canvas-toolbar { background: var(--bg-elevated); }
 body.night .canvas-wrap { border-color: var(--ink-faint); }
 body.night .tool-btn { background: var(--bg-card); border-color: var(--ink-faint); }
 body.night #drawColor { border-color: var(--ink-faint); }
+
+/* ============================================================
+   你画我猜 (Draw & Guess) Styles
+   ============================================================ */
+.dg-choices {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  justify-content: center;
+  margin-top: 16px;
+}
+.dg-choice-btn {
+  font-size: 1.1rem !important;
+  padding: 16px 32px !important;
+  border-radius: 12px !important;
+  min-width: 120px;
+  transition: all 0.2s ease;
+}
+.dg-choice-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+  background: var(--cinnabar-bg) !important;
+  border-color: var(--cinnabar) !important;
+  color: var(--cinnabar) !important;
+}
+
+.dg-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--ink-faint);
+}
+.dg-word-display {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+}
+.dg-word {
+  font-family: var(--font-display);
+  font-size: 1.6rem;
+  font-weight: 700;
+  color: var(--cinnabar);
+  letter-spacing: 4px;
+}
+.dg-hint {
+  font-size: 1.3rem;
+  color: var(--ink-muted);
+  letter-spacing: 6px;
+}
+.dg-drawer-name {
+  font-size: 0.85rem;
+  color: var(--ink-muted);
+  background: var(--bg-warm);
+  padding: 4px 12px;
+  border-radius: var(--radius-pill);
+}
+
+.dg-body {
+  display: grid;
+  grid-template-columns: 1fr 260px;
+  gap: 16px;
+  align-items: start;
+}
+@media (max-width: 767px) {
+  .dg-body {
+    grid-template-columns: 1fr;
+  }
+  .dg-chat-area { order: 2; }
+}
+
+.dg-canvas-area {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.dg-chat-area {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 500px;
+}
+.dg-chat-area .chat-scroll {
+  height: 200px;
+  flex: 1;
+}
+
+/* Scoreboard */
+.dg-scoreboard {
+  background: var(--bg-warm);
+  border-radius: var(--radius-sm);
+  padding: 8px 12px;
+  max-height: 180px;
+  overflow-y: auto;
+}
+.dg-sb-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 4px 0;
+  font-size: 0.85rem;
+  color: var(--ink-soft);
+}
+.dg-sb-row.guessed { color: var(--jade); font-weight: 600; }
+.dg-sb-row.drawing { color: var(--cinnabar); font-weight: 600; }
+
+/* Final scores */
+.dg-final-scores {
+  margin-top: 16px;
+}
+.dg-score-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border-radius: var(--radius-sm);
+  margin-bottom: 6px;
+  background: var(--bg-warm);
+}
+.dg-score-row.dg-winner {
+  background: linear-gradient(135deg, #fef6e8 0%, #fff8e1 100%);
+  border: 1.5px solid #f1c40f;
+}
+.dg-rank { font-size: 1.2rem; min-width: 32px; }
+.dg-name { flex: 1; font-weight: 500; }
+.dg-pts { font-weight: 700; color: var(--cinnabar); }
+
+/* Mode switch highlight */
+.mode-switch select {
+  font-weight: 600;
+  color: var(--cinnabar);
+}
+
