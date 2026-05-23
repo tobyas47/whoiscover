@@ -74,7 +74,9 @@ function createRoom(hostId, hostName) {
       wordSource: 'builtin', // 'builtin' | 'upload' | 'angel'
       dayTimer: 120,   // 白天讨论秒数
       nightTimer: 30,  // 夜晚行动秒数
-      voteTimer: 30    // 投票秒数
+      voteTimer: 30,   // 投票秒数
+      drawEnabled: true, // 是否启用画布阶段
+      drawTimer: 90    // 画画秒数
     },
     goodWord: '',
     badWord: '',
@@ -89,6 +91,8 @@ function createRoom(hostId, hostName) {
     timer: null,       // setTimeout reference
     timerEnd: null,    // timestamp when timer expires
     spectators: new Map(), // socketId -> {id, name}
+    canvasData: new Map(), // socketId -> base64 data URL
+    gallery: [],           // [{name, dataUrl, playerId}]
     _lastActivity: Date.now()
   };
   rooms.set(roomId, room);
@@ -127,7 +131,8 @@ function getRoomState(room, playerId) {
     currentSpeaker: room.phase === 'day' ? room.dayDiscussionOrder[room.currentSpeaker] : null,
     gameLog: room.gameLog,
     timerEnd: room.timerEnd,
-    blankGuessPlayer: room.blankGuessPlayer || null
+    blankGuessPlayer: room.blankGuessPlayer || null,
+    gallery: room.gallery || []
   };
 }
 
@@ -212,7 +217,11 @@ function finishAngelPick(room) {
 
   room.gameLog.push({ type: 'phase', message: '天使已出词，游戏开始！' });
   room.round = 1;
-  startDayPhase(room);
+  if (room.settings.drawEnabled) {
+    startDrawPhase(room);
+  } else {
+    startDayPhase(room);
+  }
 }
 
 function assignRoles(room) {
@@ -361,6 +370,44 @@ function resolveNight(room) {
 
   // 进入白天（新一轮）
   room.round++;
+  if (room.settings.drawEnabled) {
+    startDrawPhase(room);
+  } else {
+    startDayPhase(room);
+  }
+}
+
+function startDrawPhase(room) {
+  room.phase = 'draw';
+  room.gameLog.push({ type: 'phase', message: '🎨 画画时间！请在画布上自由创作' });
+
+  setRoomTimer(room, room.settings.drawTimer, () => {
+    if (room.phase !== 'draw') return;
+    // 时间到，自动结束画画阶段
+    finishDrawPhase(room);
+  });
+
+  broadcastRoomState(room);
+}
+
+function finishDrawPhase(room) {
+  clearRoomTimer(room);
+
+  // 收集所有存活玩家的画布到 gallery
+  for (const [id, p] of room.players) {
+    if (p.alive && room.canvasData.has(id)) {
+      // 更新 gallery（替换同一玩家的旧画）
+      const existing = room.gallery.findIndex(g => g.playerId === id);
+      const entry = { playerId: id, name: p.name, dataUrl: room.canvasData.get(id) };
+      if (existing !== -1) {
+        room.gallery[existing] = entry;
+      } else {
+        room.gallery.push(entry);
+      }
+    }
+  }
+
+  room.gameLog.push({ type: 'phase', message: '画画时间结束，进入讨论' });
   startDayPhase(room);
 }
 
@@ -677,6 +724,16 @@ io.on('connection', (socket) => {
         room.blankGuessPlayer = newSocketId;
       }
 
+      // 更新画布数据
+      if (room.canvasData.has(oldSocketId)) {
+        room.canvasData.set(newSocketId, room.canvasData.get(oldSocketId));
+        room.canvasData.delete(oldSocketId);
+      }
+      // 更新 gallery 引用
+      for (const entry of room.gallery) {
+        if (entry.playerId === oldSocketId) entry.playerId = newSocketId;
+      }
+
       // 更新发言顺序
       const speakerIdx = room.dayDiscussionOrder.indexOf(oldSocketId);
       if (speakerIdx !== -1) {
@@ -727,7 +784,7 @@ io.on('connection', (socket) => {
     if (undercoverCount + angelCount + blankCount >= total) return;
     if (undercoverCount < 1) return;
 
-    // 验证计时器设置 (30-300秒)
+    // 验证计时器设置
     const clamp = (v, min, max) => Math.max(min, Math.min(max, v || min));
 
     currentRoom.settings = {
@@ -735,9 +792,11 @@ io.on('connection', (socket) => {
       angelCount,
       blankCount,
       wordSource: settings.wordSource || 'builtin',
-      dayTimer: clamp(dayTimer, 30, 300),
-      nightTimer: clamp(nightTimer, 15, 120),
-      voteTimer: clamp(voteTimer, 15, 120)
+      dayTimer: clamp(dayTimer, 30, 9999),
+      nightTimer: clamp(nightTimer, 15, 9999),
+      voteTimer: clamp(voteTimer, 15, 9999),
+      drawEnabled: settings.drawEnabled !== false,
+      drawTimer: clamp(settings.drawTimer, 30, 9999)
     };
     broadcastRoomState(currentRoom);
   });
@@ -816,7 +875,11 @@ io.on('connection', (socket) => {
     currentRoom.gameLog = [];
     currentRoom.gameLog.push({ type: 'phase', message: '游戏开始！请查看你的身份和词语' });
     currentRoom.round = 1;
-    startDayPhase(currentRoom);
+    if (currentRoom.settings.drawEnabled) {
+      startDrawPhase(currentRoom);
+    } else {
+      startDayPhase(currentRoom);
+    }
   });
 
   socket.on('nightAction', (targetId) => {
@@ -988,6 +1051,24 @@ io.on('connection', (socket) => {
     });
   });
 
+  // 提交画布数据
+  socket.on('submitCanvas', (dataUrl) => {
+    if (!currentRoom || currentRoom.phase !== 'draw') return;
+    const player = currentRoom.players.get(socket.id);
+    if (!player || !player.alive) return;
+    // 验证 data URL 格式（限制大小 2MB）
+    if (typeof dataUrl !== 'string' || !dataUrl.startsWith('data:image/png;base64,')) return;
+    if (dataUrl.length > 2 * 1024 * 1024) return;
+    currentRoom.canvasData.set(socket.id, dataUrl);
+  });
+
+  // 请求获取自己之前的画布数据（用于恢复）
+  socket.on('getMyCanvas', (callback) => {
+    if (!currentRoom) return callback(null);
+    const data = currentRoom.canvasData.get(socket.id);
+    callback(data || null);
+  });
+
   socket.on('restartGame', () => {
     if (!currentRoom || currentRoom.hostId !== socket.id) return;
     if (currentRoom.phase !== 'ended') return;
@@ -1005,6 +1086,8 @@ io.on('connection', (socket) => {
     currentRoom.gameLog = [];
     currentRoom.angelWords = null;
     currentRoom.blankGuessPlayer = null;
+    currentRoom.canvasData.clear();
+    currentRoom.gallery = [];
     broadcastRoomState(currentRoom);
   });
 

@@ -111,6 +111,8 @@ $('#settingBlank').addEventListener('change', syncSettings);
 $('#settingDayTimer').addEventListener('change', syncSettings);
 $('#settingNightTimer').addEventListener('change', syncSettings);
 $('#settingVoteTimer').addEventListener('change', syncSettings);
+$('#settingDrawEnabled').addEventListener('change', syncSettings);
+$('#settingDrawTimer').addEventListener('change', syncSettings);
 $('#settingWordSource').addEventListener('change', () => {
   syncSettings();
   // 显示/隐藏上传区域
@@ -161,7 +163,9 @@ function syncSettings() {
     wordSource: $('#settingWordSource').value,
     dayTimer: +$('#settingDayTimer').value,
     nightTimer: +$('#settingNightTimer').value,
-    voteTimer: +$('#settingVoteTimer').value
+    voteTimer: +$('#settingVoteTimer').value,
+    drawEnabled: $('#settingDrawEnabled').value === '1',
+    drawTimer: +$('#settingDrawTimer').value
   });
 }
 
@@ -214,6 +218,11 @@ socket.on('roomState', (state) => {
 
   // 阶段变化时重置行动状态
   if (currentPhase !== state.phase) {
+    // 离开画画阶段时，最终提交画布
+    if (currentPhase === 'draw' && state.phase !== 'draw') {
+      const dataUrl = drawCanvas.toDataURL('image/png');
+      socket.emit('submitCanvas', dataUrl);
+    }
     nightActionSent = false;
     voteSent = false;
   }
@@ -255,7 +264,7 @@ function render(state) {
   document.body.classList.toggle('spectator-mode', isSpectator);
 
   // Hide all panels
-  ['nightPanel','dayPanel','votePanel','waitingPanel','endPanel','angelPickPanel','blankGuessPanel'].forEach(id => {
+  ['nightPanel','dayPanel','votePanel','waitingPanel','endPanel','angelPickPanel','blankGuessPanel','drawPanel','galleryPanel'].forEach(id => {
     $(`#${id}`).classList.add('hidden');
   });
 
@@ -271,17 +280,29 @@ function render(state) {
     case 'waiting': renderWaiting(state); break;
     case 'angelPick': renderAngelPick(state); break;
     case 'night': renderNight(state); break;
+    case 'draw': renderDraw(state); break;
     case 'day': renderDay(state); break;
     case 'vote': renderVote(state); break;
     case 'blankGuess': renderBlankGuess(state); break;
     case 'ended': renderEnd(state); break;
   }
 
+  // Show gallery during day/vote/ended if available (not during draw)
+  if (['day','vote','ended'].includes(state.phase) && state.gallery && state.gallery.length > 0) {
+    renderGallery(state.gallery);
+  }
+
+  // Desktop split layout: gallery + action panel side-by-side
+  const mainEl = $('.room-main');
+  const galleryVisible = !$('#galleryPanel').classList.contains('hidden');
+  const hasActionPanel = ['day','vote','night','blankGuess'].includes(state.phase);
+  mainEl.classList.toggle('layout-split', galleryVisible && hasActionPanel);
+
   renderLog(state.gameLog);
 }
 
 function renderPhase(state) {
-  const names = { waiting: '等待中', angelPick: '天使出词', night: '夜晚', day: '白天', vote: '投票', blankGuess: '白板猜词', ended: '结束' };
+  const names = { waiting: '等待中', angelPick: '天使出词', night: '夜晚', draw: '画画', day: '白天', vote: '投票', blankGuess: '白板猜词', ended: '结束' };
   const badge = $('#phaseBadge');
   badge.textContent = names[state.phase];
   badge.className = `phase-pill phase-${state.phase}`;
@@ -358,6 +379,8 @@ function renderWaiting(state) {
     $('#settingDayTimer').value = state.settings.dayTimer;
     $('#settingNightTimer').value = state.settings.nightTimer;
     $('#settingVoteTimer').value = state.settings.voteTimer;
+    $('#settingDrawEnabled').value = state.settings.drawEnabled ? '1' : '0';
+    $('#settingDrawTimer').value = state.settings.drawTimer;
   } else {
     $('#settingsPanel').classList.add('hidden');
     $('#waitingHint').classList.remove('hidden');
@@ -617,3 +640,303 @@ function shake(el) {
 const style = document.createElement('style');
 style.textContent = `@keyframes shake { 0%,100%{transform:translateX(0)} 25%{transform:translateX(-6px)} 75%{transform:translateX(6px)} }`;
 document.head.appendChild(style);
+
+// ============ CANVAS DRAWING ENGINE ============
+const drawCanvas = document.getElementById('drawCanvas');
+const drawCtx = drawCanvas.getContext('2d', { willReadFrequently: true });
+let drawTool = 'pen'; // 'pen' | 'eraser' | 'fill'
+let drawColorValue = '#1e1e1e';
+let drawSizeValue = 4;
+let isDrawing = false;
+let undoStack = []; // array of ImageData snapshots
+const MAX_UNDO = 30;
+let lastDrawPhase = '';
+let canvasAutoSaveTimer = null;
+
+// Initialize canvas white
+function initCanvas() {
+  drawCtx.fillStyle = '#ffffff';
+  drawCtx.fillRect(0, 0, drawCanvas.width, drawCanvas.height);
+  undoStack = [];
+  saveUndoState();
+}
+initCanvas();
+
+function saveUndoState() {
+  undoStack.push(drawCtx.getImageData(0, 0, drawCanvas.width, drawCanvas.height));
+  if (undoStack.length > MAX_UNDO) undoStack.shift();
+}
+
+function undo() {
+  if (undoStack.length <= 1) return;
+  undoStack.pop(); // remove current
+  const prev = undoStack[undoStack.length - 1];
+  drawCtx.putImageData(prev, 0, 0);
+  autoSaveCanvas();
+}
+
+// Get canvas coords from mouse/touch event
+function getCanvasPos(e) {
+  const rect = drawCanvas.getBoundingClientRect();
+  const scaleX = drawCanvas.width / rect.width;
+  const scaleY = drawCanvas.height / rect.height;
+  const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+  const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+  return {
+    x: (clientX - rect.left) * scaleX,
+    y: (clientY - rect.top) * scaleY
+  };
+}
+
+// Drawing handlers
+drawCanvas.addEventListener('pointerdown', (e) => {
+  if (currentPhase !== 'draw') return;
+  e.preventDefault();
+  drawCanvas.setPointerCapture(e.pointerId);
+
+  const pos = getCanvasPos(e);
+
+  if (drawTool === 'fill') {
+    floodFill(Math.round(pos.x), Math.round(pos.y), drawColorValue);
+    saveUndoState();
+    autoSaveCanvas();
+    return;
+  }
+
+  isDrawing = true;
+  saveUndoState();
+  drawCtx.beginPath();
+  drawCtx.moveTo(pos.x, pos.y);
+  drawCtx.lineCap = 'round';
+  drawCtx.lineJoin = 'round';
+
+  if (drawTool === 'eraser') {
+    drawCtx.globalCompositeOperation = 'destination-out';
+    drawCtx.lineWidth = drawSizeValue * 3;
+  } else {
+    drawCtx.globalCompositeOperation = 'source-over';
+    drawCtx.strokeStyle = drawColorValue;
+    drawCtx.lineWidth = drawSizeValue;
+  }
+
+  // Draw a dot for single click
+  drawCtx.lineTo(pos.x + 0.1, pos.y + 0.1);
+  drawCtx.stroke();
+});
+
+drawCanvas.addEventListener('pointermove', (e) => {
+  if (!isDrawing) return;
+  e.preventDefault();
+  const pos = getCanvasPos(e);
+  drawCtx.lineTo(pos.x, pos.y);
+  drawCtx.stroke();
+});
+
+drawCanvas.addEventListener('pointerup', (e) => {
+  if (!isDrawing) return;
+  isDrawing = false;
+  drawCtx.globalCompositeOperation = 'source-over';
+  autoSaveCanvas();
+});
+
+drawCanvas.addEventListener('pointerleave', (e) => {
+  if (!isDrawing) return;
+  isDrawing = false;
+  drawCtx.globalCompositeOperation = 'source-over';
+  autoSaveCanvas();
+});
+
+// Prevent scrolling while drawing
+drawCanvas.addEventListener('touchstart', (e) => { if (currentPhase === 'draw') e.preventDefault(); }, { passive: false });
+drawCanvas.addEventListener('touchmove', (e) => { if (currentPhase === 'draw') e.preventDefault(); }, { passive: false });
+
+// Toolbar buttons
+function setActiveTool(tool) {
+  drawTool = tool;
+  $('#btnPen').classList.toggle('active', tool === 'pen');
+  $('#btnEraser').classList.toggle('active', tool === 'eraser');
+  $('#btnFill').classList.toggle('active', tool === 'fill');
+}
+
+$('#btnPen').addEventListener('click', () => setActiveTool('pen'));
+
+$('#btnEraser').addEventListener('click', () => {
+  setActiveTool(drawTool === 'eraser' ? 'pen' : 'eraser');
+});
+
+$('#btnFill').addEventListener('click', () => {
+  setActiveTool(drawTool === 'fill' ? 'pen' : 'fill');
+});
+
+$('#btnUndo').addEventListener('click', undo);
+
+$('#btnClearCanvas').addEventListener('click', () => {
+  saveUndoState();
+  drawCtx.fillStyle = '#ffffff';
+  drawCtx.fillRect(0, 0, drawCanvas.width, drawCanvas.height);
+  autoSaveCanvas();
+});
+
+// Color palette
+$$('#colorPalette .color-swatch').forEach(btn => {
+  btn.addEventListener('click', () => {
+    drawColorValue = btn.dataset.color;
+    $$('#colorPalette .color-swatch').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    $('#drawColor').value = drawColorValue;
+    if (drawTool === 'eraser') setActiveTool('pen');
+  });
+});
+
+$('#drawColor').addEventListener('input', (e) => {
+  drawColorValue = e.target.value;
+  // Deselect palette swatches
+  $$('#colorPalette .color-swatch').forEach(b => b.classList.remove('active'));
+  if (drawTool === 'eraser') setActiveTool('pen');
+});
+
+$('#drawSize').addEventListener('input', (e) => {
+  drawSizeValue = +e.target.value;
+  const preview = $('#sizePreview');
+  const sz = Math.max(4, Math.min(drawSizeValue, 20));
+  preview.style.width = sz + 'px';
+  preview.style.height = sz + 'px';
+});
+
+// Flood fill algorithm
+function floodFill(startX, startY, fillColor) {
+  const w = drawCanvas.width;
+  const h = drawCanvas.height;
+  const imageData = drawCtx.getImageData(0, 0, w, h);
+  const data = imageData.data;
+
+  // Parse fill color
+  const fc = hexToRgb(fillColor);
+  const startIdx = (startY * w + startX) * 4;
+  const startR = data[startIdx], startG = data[startIdx + 1], startB = data[startIdx + 2], startA = data[startIdx + 3];
+
+  // Don't fill if same color
+  if (startR === fc.r && startG === fc.g && startB === fc.b && startA === 255) return;
+
+  const tolerance = 32;
+  const stack = [[startX, startY]];
+  const visited = new Uint8Array(w * h);
+
+  function matches(idx) {
+    return Math.abs(data[idx] - startR) <= tolerance &&
+           Math.abs(data[idx + 1] - startG) <= tolerance &&
+           Math.abs(data[idx + 2] - startB) <= tolerance &&
+           Math.abs(data[idx + 3] - startA) <= tolerance;
+  }
+
+  while (stack.length > 0) {
+    const [x, y] = stack.pop();
+    if (x < 0 || x >= w || y < 0 || y >= h) continue;
+    const pi = y * w + x;
+    if (visited[pi]) continue;
+    const idx = pi * 4;
+    if (!matches(idx)) continue;
+
+    visited[pi] = 1;
+    data[idx] = fc.r;
+    data[idx + 1] = fc.g;
+    data[idx + 2] = fc.b;
+    data[idx + 3] = 255;
+
+    stack.push([x + 1, y], [x - 1, y], [x, y + 1], [x, y - 1]);
+  }
+
+  drawCtx.putImageData(imageData, 0, 0);
+}
+
+function hexToRgb(hex) {
+  const r = parseInt(hex.slice(1, 3), 16);
+  const g = parseInt(hex.slice(3, 5), 16);
+  const b = parseInt(hex.slice(5, 7), 16);
+  return { r, g, b };
+}
+
+// Auto-save canvas to server during draw phase
+function autoSaveCanvas() {
+  if (currentPhase !== 'draw') return;
+  if (canvasAutoSaveTimer) clearTimeout(canvasAutoSaveTimer);
+  canvasAutoSaveTimer = setTimeout(() => {
+    const dataUrl = drawCanvas.toDataURL('image/png');
+    socket.emit('submitCanvas', dataUrl);
+  }, 500);
+}
+
+// ============ Render Draw Phase ============
+function renderDraw(state) {
+  const me = state.players.find(p => p.id === myId);
+  const panel = $('#drawPanel');
+  panel.classList.remove('hidden');
+
+  // Show gallery alongside if available
+  if (state.gallery && state.gallery.length > 0) {
+    renderGallery(state.gallery);
+  }
+
+  if (!me || !me.alive) {
+    // Dead players can't draw, just show gallery
+    panel.classList.add('hidden');
+    return;
+  }
+
+  // Load previous canvas data on first enter
+  if (lastDrawPhase !== state.phase + state.round) {
+    lastDrawPhase = state.phase + state.round;
+    socket.emit('getMyCanvas', (data) => {
+      if (data) {
+        const img = new Image();
+        img.onload = () => {
+          drawCtx.clearRect(0, 0, drawCanvas.width, drawCanvas.height);
+          drawCtx.drawImage(img, 0, 0);
+          undoStack = [drawCtx.getImageData(0, 0, drawCanvas.width, drawCanvas.height)];
+        };
+        img.src = data;
+      } else {
+        // Keep existing canvas (don't reset between rounds)
+        if (undoStack.length === 0) {
+          initCanvas();
+        }
+      }
+    });
+  }
+}
+
+// ============ Gallery ============
+function renderGallery(gallery) {
+  if (!gallery || gallery.length === 0) {
+    $('#galleryPanel').classList.add('hidden');
+    return;
+  }
+  $('#galleryPanel').classList.remove('hidden');
+  const grid = $('#galleryGrid');
+  grid.innerHTML = '';
+  gallery.forEach(item => {
+    const div = document.createElement('div');
+    div.className = 'gallery-item';
+    div.innerHTML = `
+      <img src="${item.dataUrl}" alt="${esc(item.name)}\u7684\u753b">
+      <div class="gallery-item-name">${esc(item.name)}</div>
+    `;
+    div.addEventListener('click', () => openGalleryModal(item));
+    grid.appendChild(div);
+  });
+}
+
+function openGalleryModal(item) {
+  const modal = $('#galleryModal');
+  $('#galleryModalImg').src = item.dataUrl;
+  $('#galleryModalName').textContent = item.name + ' 的作品';
+  modal.classList.remove('hidden');
+}
+
+$('#galleryModalClose').addEventListener('click', () => {
+  $('#galleryModal').classList.add('hidden');
+});
+$('#galleryModal').querySelector('.gallery-modal-backdrop').addEventListener('click', () => {
+  $('#galleryModal').classList.add('hidden');
+});
+

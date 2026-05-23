@@ -224,15 +224,24 @@
             <div class="setting-divider"></div>
             <div class="setting-row">
               <span>白天时长</span>
-              <select id="settingDayTimer"><option value="60">60秒</option><option value="90">90秒</option><option value="120" selected>120秒</option><option value="180">180秒</option><option value="300">300秒</option></select>
+              <select id="settingDayTimer"><option value="60">60秒</option><option value="90">90秒</option><option value="120" selected>120秒</option><option value="180">3分钟</option><option value="300">5分钟</option><option value="600">10分钟</option><option value="900">15分钟</option><option value="9999">不限时</option></select>
             </div>
             <div class="setting-row">
               <span>夜晚时长</span>
-              <select id="settingNightTimer"><option value="15">15秒</option><option value="30" selected>30秒</option><option value="45">45秒</option><option value="60">60秒</option></select>
+              <select id="settingNightTimer"><option value="15">15秒</option><option value="30" selected>30秒</option><option value="45">45秒</option><option value="60">60秒</option><option value="90">90秒</option><option value="120">2分钟</option><option value="300">5分钟</option><option value="9999">不限时</option></select>
             </div>
             <div class="setting-row">
               <span>投票时长</span>
-              <select id="settingVoteTimer"><option value="15">15秒</option><option value="30" selected>30秒</option><option value="45">45秒</option><option value="60">60秒</option></select>
+              <select id="settingVoteTimer"><option value="15">15秒</option><option value="30" selected>30秒</option><option value="45">45秒</option><option value="60">60秒</option><option value="90">90秒</option><option value="120">2分钟</option><option value="300">5分钟</option><option value="9999">不限时</option></select>
+            </div>
+            <div class="setting-divider"></div>
+            <div class="setting-row">
+              <span>画画阶段</span>
+              <select id="settingDrawEnabled"><option value="1" selected>开启</option><option value="0">关闭</option></select>
+            </div>
+            <div class="setting-row">
+              <span>画画时长</span>
+              <select id="settingDrawTimer"><option value="60">60秒</option><option value="90" selected>90秒</option><option value="120">2分钟</option><option value="180">3分钟</option><option value="300">5分钟</option><option value="600">10分钟</option><option value="9999">不限时</option></select>
             </div>
             <button id="btnStart" class="btn btn-accent full-width mt">开始游戏</button>
           </div>
@@ -275,6 +284,69 @@
           <div id="endRoles" class="end-reveal"></div>
           <button id="btnRestart" class="btn btn-accent full-width mt hidden">再来一局</button>
         </section>
+
+        <!-- 画画面板 -->
+        <section id="drawPanel" class="panel hidden">
+          <div class="panel-head">
+            <h2>🎨 画画时间</h2>
+            <p class="panel-hint">在画布上自由创作，时间到后所有人的画将展示</p>
+          </div>
+          <div class="canvas-toolbar">
+            <div class="toolbar-group">
+              <button id="btnPen" class="tool-btn active" title="画笔">✏️</button>
+              <button id="btnFill" class="tool-btn" title="填色">🪣</button>
+              <button id="btnEraser" class="tool-btn" title="橡皮擦">🧽</button>
+              <button id="btnUndo" class="tool-btn" title="撤销">↩️</button>
+              <button id="btnClearCanvas" class="tool-btn" title="清空">🗑️</button>
+            </div>
+            <div class="toolbar-group">
+              <label class="size-label">粗细</label>
+              <input type="range" id="drawSize" min="1" max="40" value="4" class="size-slider">
+              <span id="sizePreview" class="size-preview"></span>
+            </div>
+          </div>
+          <div class="color-palette" id="colorPalette">
+            <button class="color-swatch active" data-color="#1e1e1e" style="background:#1e1e1e" title="黑"></button>
+            <button class="color-swatch" data-color="#ffffff" style="background:#ffffff" title="白"></button>
+            <button class="color-swatch" data-color="#9b9b9b" style="background:#9b9b9b" title="灰"></button>
+            <button class="color-swatch" data-color="#c0392b" style="background:#c0392b" title="红"></button>
+            <button class="color-swatch" data-color="#e74c3c" style="background:#e74c3c" title="浅红"></button>
+            <button class="color-swatch" data-color="#f39c12" style="background:#f39c12" title="橙"></button>
+            <button class="color-swatch" data-color="#f1c40f" style="background:#f1c40f" title="黄"></button>
+            <button class="color-swatch" data-color="#27ae60" style="background:#27ae60" title="绿"></button>
+            <button class="color-swatch" data-color="#2ecc71" style="background:#2ecc71" title="浅绿"></button>
+            <button class="color-swatch" data-color="#2980b9" style="background:#2980b9" title="蓝"></button>
+            <button class="color-swatch" data-color="#3498db" style="background:#3498db" title="浅蓝"></button>
+            <button class="color-swatch" data-color="#8e44ad" style="background:#8e44ad" title="紫"></button>
+            <button class="color-swatch" data-color="#e91e63" style="background:#e91e63" title="粉"></button>
+            <button class="color-swatch" data-color="#795548" style="background:#795548" title="棕"></button>
+            <button class="color-swatch" data-color="#00bcd4" style="background:#00bcd4" title="青"></button>
+            <button class="color-swatch" data-color="#ff9800" style="background:#ff9800" title="亮橙"></button>
+            <input type="color" id="drawColor" value="#1e1e1e" title="自定义颜色" class="color-custom">
+          </div>
+          <div class="canvas-wrap">
+            <canvas id="drawCanvas" width="800" height="600"></canvas>
+          </div>
+        </section>
+
+        <!-- 画廊面板 -->
+        <section id="galleryPanel" class="panel hidden">
+          <div class="panel-head">
+            <h2>🖼️ 画廊</h2>
+            <p class="panel-hint">点击可放大查看</p>
+          </div>
+          <div id="galleryGrid" class="gallery-grid"></div>
+        </section>
+
+        <!-- 画廊放大弹窗 -->
+        <div id="galleryModal" class="gallery-modal hidden">
+          <div class="gallery-modal-backdrop"></div>
+          <div class="gallery-modal-content">
+            <img id="galleryModalImg" src="" alt="画作">
+            <div id="galleryModalName" class="gallery-modal-name"></div>
+            <button id="galleryModalClose" class="gallery-modal-close">✕</button>
+          </div>
+        </div>
 
           </main><!-- end .room-main -->
         </div><!-- end .room-body -->
