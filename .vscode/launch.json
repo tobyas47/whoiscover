@@ -4,10 +4,12 @@
     {
       "type": "node",
       "request": "launch",
-      "name": "启动游戏服务器",
-      "program": "${workspaceFolder}/server.js",
+      "name": "调试服务器",
+      "program": "${workspaceFolder}/server/index.js",
       "console": "integratedTerminal",
       "restart": true
     }
+  ]
+}
   ]
 }

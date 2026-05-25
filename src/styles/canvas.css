@@ -1,0 +1,286 @@
+/* ============ Canvas / Draw Phase ============ */
+.canvas-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  background: var(--bg-warm);
+  border-radius: 12px;
+  margin-bottom: 12px;
+}
+.toolbar-group { display: flex; align-items: center; gap: 8px; }
+.tool-btn {
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1.5px solid var(--ink-faint);
+  border-radius: 8px;
+  background: var(--bg-card);
+  cursor: pointer;
+  font-size: 1rem;
+  transition: all 0.15s ease;
+}
+.tool-btn:hover {
+  border-color: var(--cinnabar-soft);
+  background: var(--cinnabar-bg);
+  transform: translateY(-1px);
+}
+.tool-btn.active {
+  border-color: var(--cinnabar);
+  background: var(--cinnabar-bg);
+  box-shadow: 0 0 0 2px rgba(196, 69, 54, 0.15);
+}
+
+.size-label { font-size: 0.78rem; color: var(--ink-muted); white-space: nowrap; }
+.size-slider { width: 100px; accent-color: var(--cinnabar); cursor: pointer; }
+
+/* Color Palette */
+.color-palette {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+  padding: 10px 16px;
+  background: var(--bg-warm);
+  border-radius: 10px;
+  margin-bottom: 12px;
+}
+.color-swatch {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 2.5px solid transparent;
+  cursor: pointer;
+  transition: transform 0.15s, border-color 0.15s, box-shadow 0.15s;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.12);
+}
+.color-swatch:hover { transform: scale(1.2); box-shadow: 0 2px 8px rgba(0,0,0,0.2); }
+.color-swatch.active {
+  border-color: var(--ink);
+  transform: scale(1.15);
+  box-shadow: 0 0 0 2px var(--bg-card), 0 0 0 4px var(--ink);
+}
+.color-custom {
+  width: 28px;
+  height: 28px;
+  border: 2px solid var(--ink-faint);
+  border-radius: 50%;
+  padding: 0;
+  cursor: pointer;
+  background: conic-gradient(red, yellow, lime, aqua, blue, magenta, red);
+  overflow: hidden;
+}
+.color-custom::-webkit-color-swatch-wrapper { padding: 0; }
+.color-custom::-webkit-color-swatch { border: none; border-radius: 50%; }
+
+.canvas-wrap {
+  position: relative;
+  width: 100%;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 2px solid var(--ink-faint);
+  background: #ffffff;
+  box-shadow: inset 0 2px 8px rgba(0,0,0,0.03);
+}
+.canvas-wrap canvas {
+  display: block;
+  width: 100%;
+  height: auto;
+  cursor: crosshair;
+}
+
+/* Night mode */
+body.night .canvas-toolbar { background: var(--bg-elevated); }
+body.night .canvas-wrap { border-color: var(--ink-faint); }
+body.night .tool-btn { background: var(--bg-card); border-color: var(--ink-faint); }
+body.night .color-palette { background: var(--bg-elevated); }
+body.night .color-swatch.active {
+  box-shadow: 0 0 0 2px var(--bg-card), 0 0 0 4px var(--night-ink);
+  border-color: var(--night-ink);
+}
+
+/* ============ Gallery ============ */
+.gallery-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 16px;
+  margin-top: 12px;
+}
+.gallery-item {
+  position: relative;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1.5px solid var(--ink-faint);
+  background: #fff;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: var(--shadow-sm);
+}
+.gallery-item:hover { transform: translateY(-3px); box-shadow: var(--shadow-md); border-color: var(--cinnabar-soft); }
+.gallery-item img { width: 100%; height: auto; display: block; }
+.gallery-name {
+  position: absolute;
+  bottom: 0; left: 0; right: 0;
+  padding: 6px 12px;
+  background: linear-gradient(transparent, rgba(0,0,0,0.7));
+  color: #fff;
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+/* Gallery Modal */
+.gallery-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  animation: fadeIn 0.2s ease;
+}
+.gallery-modal-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0,0,0,0.8);
+  backdrop-filter: blur(4px);
+}
+.gallery-modal-content {
+  position: relative;
+  max-width: 90vw;
+  max-height: 90vh;
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+}
+.gallery-modal-content img { display: block; max-width: 90vw; max-height: 85vh; object-fit: contain; background: #fff; }
+.gallery-modal-name {
+  position: absolute;
+  bottom: 0; left: 0; right: 0;
+  padding: 12px 20px;
+  background: linear-gradient(transparent, rgba(0,0,0,0.8));
+  color: #fff;
+  font-size: 1rem;
+  font-weight: 600;
+}
+.gallery-modal-close {
+  position: absolute;
+  top: 12px; right: 12px;
+  width: 36px; height: 36px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(0,0,0,0.6);
+  color: #fff;
+  font-size: 1.2rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.gallery-modal-close:hover { background: rgba(0,0,0,0.85); }
+@keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+/* ============ 你画我猜 (Draw & Guess) ============ */
+.dg-choices {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  justify-content: center;
+  margin-top: 16px;
+}
+.dg-choices .btn {
+  font-size: 1.1rem;
+  padding: 16px 32px;
+  border-radius: 12px;
+  min-width: 120px;
+}
+.dg-choices .btn:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+  background: var(--cinnabar-bg);
+  border-color: var(--cinnabar);
+  color: var(--cinnabar);
+}
+
+.dg-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid var(--ink-faint);
+}
+.dg-word-display { display: flex; align-items: baseline; gap: 12px; }
+.dg-word {
+  font-family: var(--font-display);
+  font-size: 1.6rem;
+  font-weight: 700;
+  color: var(--cinnabar);
+  letter-spacing: 4px;
+}
+.dg-hint { font-size: 1.3rem; color: var(--ink-muted); letter-spacing: 6px; }
+.dg-drawer-name {
+  font-size: 0.85rem;
+  color: var(--ink-muted);
+  background: var(--bg-warm);
+  padding: 4px 12px;
+  border-radius: var(--radius-pill);
+}
+
+.dg-body {
+  display: grid;
+  grid-template-columns: 1fr 260px;
+  gap: 16px;
+  align-items: start;
+}
+.dg-canvas-area { display: flex; flex-direction: column; gap: 8px; }
+.dg-chat-area { display: flex; flex-direction: column; gap: 8px; max-height: 500px; }
+.dg-chat-area .chat-scroll { height: 200px; flex: 1; }
+
+.dg-scoreboard {
+  background: var(--bg-warm);
+  border-radius: var(--radius-sm);
+  padding: 8px 12px;
+  max-height: 180px;
+  overflow-y: auto;
+}
+.dg-score-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 4px 0;
+  font-size: 0.85rem;
+  color: var(--ink-soft);
+}
+.dg-score-row.is-drawer { color: var(--cinnabar); font-weight: 600; }
+
+.dg-reveal {
+  margin-top: 16px;
+  text-align: center;
+  font-size: 1.1rem;
+  color: var(--ink);
+}
+
+.dg-final-scores { margin-top: 16px; }
+.dg-final-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border-radius: var(--radius-sm);
+  margin-bottom: 6px;
+  background: var(--bg-warm);
+}
+.dg-final-row.winner {
+  background: linear-gradient(135deg, #fef6e8 0%, #fff8e1 100%);
+  border: 1.5px solid #f1c40f;
+}
+.dg-rank { font-size: 1.2rem; min-width: 32px; }
+.dg-name { flex: 1; font-weight: 500; }
+.dg-score { font-weight: 700; color: var(--cinnabar); }
+
+@media (max-width: 767px) {
+  .dg-body { grid-template-columns: 1fr; }
+  .dg-chat-area { order: 2; }
+}
