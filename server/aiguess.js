@@ -14,7 +14,7 @@ You have selected an anime (bangumi).
 Players will ask you yes/no questions to guess it, or they will try to guess the exact anime name.
 If a player asks a question or an incorrect guess, you MUST ONLY answer with exactly one of these three phrases: "是。" (Yes), "不是。" (No), or "无法回答。" (Cannot answer).
 Do NOT explain. Do NOT add punctuation unless specified. Do NOT reveal the anime.
-If a player's query correctly guesses the target anime name, you MUST use the end_game tool and provide the winner.`;
+If a player's query correctly guesses the target anime name, you MUST use the end_game tool and provide the winner. They don't need to guess the full name, as long as it's clear enough to identify the anime. For example, if the target anime is "进击的巨人" and the player guesses "巨人", you can consider it correct and end the game. They also don't need to guess the correct season.`;
 
 async function getAIResponse(room, userMessage) {
   if (!aiClient) return { isCorrect: false, text: "无法回答。" };

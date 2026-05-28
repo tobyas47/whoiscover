@@ -18,6 +18,7 @@ export function GameProvider({ children }) {
   const [gameState, setGameState] = useState(null);
   const [chatMessages, setChatMessages] = useState([]);
   const [toast, setToast] = useState(null);
+  const prevPhaseRef = useRef(null);
 
   // Init socket
   useEffect(() => {
@@ -55,11 +56,15 @@ export function GameProvider({ children }) {
     socket.on('roomState', (state) => {
       if (state.isSpectator) setIsSpectator(true);
       setIsHost(state.hostId === socket.id);
-      setGameState(prev => {
-        // Clear chat when entering a new active phase; preserve when returning to waiting (so results stay visible)
-        if (prev && prev.phase !== state.phase && state.phase !== 'waiting' && state.phase !== 'aiguessReveal') setChatMessages([]);
-        return state;
-      });
+      const prevPhase = prevPhaseRef.current;
+      prevPhaseRef.current = state.phase;
+      if (prevPhase !== null && prevPhase !== state.phase &&
+          state.phase !== 'waiting' &&
+          state.phase !== 'aiguessReveal' &&
+          state.phase !== 'turtleSoupReveal') {
+        setChatMessages([]);
+      }
+      setGameState(state);
     });
 
     socket.on('chatMessage', (d) => {

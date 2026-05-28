@@ -84,7 +84,7 @@ async function fetchBangumiWords(opts = {}) {
     // 优先用中文名，没有则用原名，过滤过长的
     const names = data.data
       .map(s => (s.name_cn && s.name_cn.trim()) || s.name)
-      .filter(n => n && n.length >= 2 && n.length <= 12);
+      .filter(n => n && n.length >= 2 && n.length <= 30);
 
     return names;
   } catch (err) {

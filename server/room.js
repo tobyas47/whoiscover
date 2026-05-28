@@ -40,6 +40,8 @@ function createRoom(hostId, hostName) {
     timerEnd: null,
     spectators: new Map(),
     readyPlayers: new Set(),
+    dgBangumiOpts: { keyword: '', type: [2], sort: 'rank', limit: 50 },
+    dgWordSource: 'bangumi',
     aiguess: {
       history: [],
       targetWord: '',

@@ -13,9 +13,13 @@ const CLUE_MODEL = 'gemini-3.5-flash';
 const ANSWER_MODEL = 'gemini-3.1-flash-lite';
 
 const CLUE_PROMPT = (name) =>
-  `请根据番剧《${name}》，用一两句话描述该番剧中某个场景、桥段或故事片段，作为谜面。` +
-  `要求：绝对不能提及番剧名称、主角姓名或任何直接指向该番剧的独特术语；` +
-  `描述要极度模糊，让人无法轻易联想到；越简短越好，不超过80字。只输出谜面本身，不要任何解释。`;
+  `你是一个海龟汤出题人。请根据番剧《${name}》中的某个核心情节，创作一道谜面。` +
+  `严格要求：` +
+  `①绝对不能出现番剧名、人物名、地名、种族名、技能名等任何专有名词；` +
+  `②只描述"一个人做了某事/发生了某事"这样抽象的人类行为或结果，不描述世界观、背景设定；` +
+  `③谜面读起来像一个奇怪的日常事件，而非明显的动漫剧情；` +
+  `④不超过50字，越简短越好。` +
+  `只输出谜面本身，不要任何解释或标题。`;
 
 const SYSTEM_INSTRUCTION = `You are playing a guessing game called 海龟汤 (turtle soup).
 A cryptic riddle about an anime was shown to players.
@@ -47,7 +51,7 @@ async function getAIResponse(room, userMessage) {
       model: ANSWER_MODEL,
       contents,
       config: {
-        systemInstruction: SYSTEM_INSTRUCTION + `\nThe target anime is: ${ts.targetWord}`,
+        systemInstruction: SYSTEM_INSTRUCTION + `\nThe target anime is: ${ts.targetWord}\nThe clue (谜面) shown to players is: ${ts.clue}`,
         tools: [{
           functionDeclarations: [{
             name: 'end_game',
@@ -87,6 +91,7 @@ async function processTurtleSoupQueue(room, io) {
   const ts = room.turtlesoup;
   if (ts.isProcessing || ts.processingQueue.length === 0) return;
   ts.isProcessing = true;
+  broadcastRoomState(room, io);
 
   while (ts.processingQueue.length > 0) {
     const { player, socketId, message } = ts.processingQueue.shift();
@@ -106,7 +111,7 @@ async function processTurtleSoupQueue(room, io) {
 
     if (reply.isCorrect) {
       ts.guessedPlayers.add(socketId);
-      const pObj = room.players.get(socketId);
+      const pObj = room.players.get(socketId) || room.spectators?.get(socketId);
       const score = Math.max(100 - (ts.guessedPlayers.size - 1) * 20, 10);
       ts.scores.set(socketId, (ts.scores.get(socketId) || 0) + score);
 
@@ -134,11 +139,12 @@ async function processTurtleSoupQueue(room, io) {
   }
 
   ts.isProcessing = false;
+  broadcastRoomState(room, io);
 }
 
 function handleTurtleSoupMessage(room, socket, io, message) {
   if (room.phase !== 'turtleSoupGuessing') return false;
-  const player = room.players.get(socket.id);
+  const player = room.players.get(socket.id) || room.spectators?.get(socket.id);
   room.turtlesoup.processingQueue.push({ player, socketId: socket.id, message });
   processTurtleSoupQueue(room, io);
   return true;

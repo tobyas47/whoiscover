@@ -462,7 +462,9 @@ function registerSocketHandlers(io) {
       if (rateLimit()) return;
       if (!currentRoom) return;
       const player = currentRoom.players.get(socket.id);
-      if (!player) return;
+      // Turtlesoup allows spectators to participate in guessing
+      const isSpectatorInTurtleSoup = !player && currentRoom.mode === 'turtlesoup' && currentRoom.spectators?.has(socket.id);
+      if (!player && !isSpectatorInTurtleSoup) return;
       const sanitized = String(message || '').trim().substring(0, 200);
       if (!sanitized) return;
 
@@ -484,6 +486,7 @@ function registerSocketHandlers(io) {
         const isH = turtlesoup.handleTurtleSoupMessage(currentRoom, socket, io, sanitized);
         if (isH) return;
       }
+      if (!player) return;
       if (currentRoom.mode === 'undercover') {
         if (currentRoom.phase !== 'day') return;
         if (!player.alive) return;
