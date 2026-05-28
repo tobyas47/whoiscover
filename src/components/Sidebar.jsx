@@ -19,7 +19,7 @@ export default function Sidebar() {
   return (
     <aside className="room-sidebar">
       {/* Identity Card */}
-      {me && me.role && phase !== 'waiting' && (
+      {me && (me.role === 'angel' || me.role === 'blank') && phase !== 'waiting' && (
         <section className="identity-card">
           <div className="identity-inner">
             <div className="identity-role">{roleLabels[me.role] || me.role}</div>

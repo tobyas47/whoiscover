@@ -25,13 +25,10 @@ async function getAIResponse(room, userMessage) {
 
   try {
     const response = await aiClient.models.generateContent({
-      model: 'gemini-3-flash-preview',
+      model: 'gemini-3.1-flash-lite',
       contents: contents,
       config: {
         systemInstruction: SYSTEM_INSTRUCTION + `\nThe target anime is: ${room.aiguess.targetWord}`,
-        thinkingConfig: {
-          thinkingLevel: 'medium'
-        },
         tools: [{
           functionDeclarations: [{
             name: "end_game",

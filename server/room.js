@@ -45,7 +45,16 @@ function createRoom(hostId, hostName) {
       targetWord: '',
       guessedPlayers: new Set(),
       scores: new Map(),
-      processingQueue: [], // For ordering messages safely
+      processingQueue: [],
+      isProcessing: false,
+    },
+    turtlesoup: {
+      clue: '',
+      targetWord: '',
+      history: [],
+      guessedPlayers: new Set(),
+      scores: new Map(),
+      processingQueue: [],
       isProcessing: false,
     },
     dg: {
@@ -102,6 +111,19 @@ function getRoomState(room, playerId) {
       isProcessing: room.aiguess.isProcessing,
       scores: Array.from(room.aiguess.scores.entries()).map(([id, s]) => ({ id, score: s })),
       targetWord: room.phase === 'aiguessReveal' ? room.aiguess.targetWord : undefined
+    };
+    state.dgBangumiOpts = room.dgBangumiOpts || null;
+    state.dgWordSource = room.dgWordSource || 'bangumi';
+  }
+
+  if (room.mode === 'turtlesoup') {
+    state.turtlesoup = {
+      clue: room.turtlesoup.clue,
+      guessedCount: room.turtlesoup.guessedPlayers.size,
+      totalPlayers: room.players.size,
+      isProcessing: room.turtlesoup.isProcessing,
+      scores: Array.from(room.turtlesoup.scores.entries()).map(([id, s]) => ({ id, score: s })),
+      targetWord: room.phase === 'turtleSoupReveal' ? room.turtlesoup.targetWord : undefined
     };
     state.dgBangumiOpts = room.dgBangumiOpts || null;
     state.dgWordSource = room.dgWordSource || 'bangumi';

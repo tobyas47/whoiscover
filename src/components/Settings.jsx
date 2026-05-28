@@ -115,11 +115,12 @@ export default function Settings() {
           <option value="undercover">谁是卧底</option>
           <option value="drawguess">你画我猜</option>
           <option value="aiguess">AI猜番</option>
+          <option value="turtlesoup">海龟汤</option>
         </select>
       </div>
       <div className="setting-divider"></div>
 
-      {(mode === 'drawguess' || mode === 'aiguess') ? (
+      {(mode === 'drawguess' || mode === 'aiguess' || mode === 'turtlesoup') ? (
         <div>
           {mode === 'drawguess' && (
             <>
@@ -154,7 +155,7 @@ export default function Settings() {
             </div>
           )}
 
-          {(dgWordSource === 'bangumi' || mode === 'aiguess') && (
+          {(dgWordSource === 'bangumi' || mode === 'aiguess' || mode === 'turtlesoup') && (
             <div className="bgm-settings">
               <div className="setting-row" style={{ alignItems: 'flex-start' }}>
                 <span style={{ paddingTop: '2px' }}>条目类型</span>

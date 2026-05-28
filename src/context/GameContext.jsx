@@ -86,14 +86,14 @@ export function GameProvider({ children }) {
 
   // Session helpers
   function saveSession(token, rid) {
-    sessionStorage.setItem('gameSession', JSON.stringify({ token, roomId: rid }));
+    localStorage.setItem('gameSession', JSON.stringify({ token, roomId: rid }));
   }
   function loadSession() {
-    try { return JSON.parse(sessionStorage.getItem('gameSession')); }
+    try { return JSON.parse(localStorage.getItem('gameSession')); }
     catch { return null; }
   }
   function clearSession() {
-    sessionStorage.removeItem('gameSession');
+    localStorage.removeItem('gameSession');
   }
 
   // Actions

@@ -5,6 +5,7 @@ const { rooms, sessions, createRoom, broadcastRoomState, getRoomState, clearRoom
 const undercover = require('./undercover');
 const drawguess = require('./drawguess');
 const aiguess = require('./aiguess');
+const turtlesoup = require('./turtlesoup');
 
 function registerSocketHandlers(io) {
   undercover.init(io);
@@ -87,6 +88,7 @@ function registerSocketHandlers(io) {
 
       if (player) {
         room.players.delete(oldSocketId);
+        delete player._disconnected;
         player.id = newSocketId;
         room.players.set(newSocketId, player);
         if (room.hostId === oldSocketId) room.hostId = newSocketId;
@@ -117,6 +119,43 @@ function registerSocketHandlers(io) {
         if (room.blankGuessPlayer === oldSocketId) room.blankGuessPlayer = newSocketId;
         const speakerIdx = room.dayDiscussionOrder.indexOf(oldSocketId);
         if (speakerIdx !== -1) room.dayDiscussionOrder[speakerIdx] = newSocketId;
+
+        // 更新你画我猜引用
+        const dg = room.dg;
+        if (dg.scores.has(oldSocketId)) {
+          dg.scores.set(newSocketId, dg.scores.get(oldSocketId));
+          dg.scores.delete(oldSocketId);
+        }
+        const dgDrawIdx = dg.drawOrder.indexOf(oldSocketId);
+        if (dgDrawIdx !== -1) dg.drawOrder[dgDrawIdx] = newSocketId;
+        if (dg.guessedPlayers.has(oldSocketId)) {
+          dg.guessedPlayers.delete(oldSocketId);
+          dg.guessedPlayers.add(newSocketId);
+        }
+
+        // 更新 AI 猜词引用
+        const ag = room.aiguess;
+        if (ag.scores.has(oldSocketId)) {
+          ag.scores.set(newSocketId, ag.scores.get(oldSocketId));
+          ag.scores.delete(oldSocketId);
+        }
+        if (ag.guessedPlayers.has(oldSocketId)) {
+          ag.guessedPlayers.delete(oldSocketId);
+          ag.guessedPlayers.add(newSocketId);
+        }
+
+        // 更新 海龟汤 引用
+        const ts = room.turtlesoup;
+        if (ts.scores.has(oldSocketId)) {
+          ts.scores.set(newSocketId, ts.scores.get(oldSocketId));
+          ts.scores.delete(oldSocketId);
+        }
+        if (ts.guessedPlayers.has(oldSocketId)) {
+          ts.guessedPlayers.delete(oldSocketId);
+          ts.guessedPlayers.add(newSocketId);
+        }
+
+        room.gameLog.push({ type: 'phase', message: `${player.name} 重新连接` });
       } else {
         const spectator = room.spectators.get(oldSocketId);
         if (spectator) {
@@ -143,7 +182,7 @@ function registerSocketHandlers(io) {
         spectatorState.isSpectator = true;
         socket.emit('roomState', spectatorState);
       } else {
-        socket.emit('roomState', getRoomState(room, newSocketId));
+        broadcastRoomState(room, io);
       }
     });
 
@@ -153,13 +192,13 @@ function registerSocketHandlers(io) {
       if (currentRoom.phase !== 'waiting') return;
       if (!settings || typeof settings !== 'object') return;
 
-      const modeChanged = settings.mode && ['undercover', 'drawguess', 'aiguess'].includes(settings.mode) && settings.mode !== currentRoom.mode;
-      if (settings.mode && ['undercover', 'drawguess', 'aiguess'].includes(settings.mode)) {
+      const modeChanged = settings.mode && ['undercover', 'drawguess', 'aiguess', 'turtlesoup'].includes(settings.mode) && settings.mode !== currentRoom.mode;
+      if (settings.mode && ['undercover', 'drawguess', 'aiguess', 'turtlesoup'].includes(settings.mode)) {
         currentRoom.mode = settings.mode;
       }
 
       // 共享Bangumi设置或特定设置
-      if (['drawguess', 'aiguess'].includes(currentRoom.mode)) {
+      if (['drawguess', 'aiguess', 'turtlesoup'].includes(currentRoom.mode)) {
         if (currentRoom.mode === 'drawguess') {
           const clamp = (v, min, max) => Math.max(min, Math.min(max, v || min));
           currentRoom.dg.maxRounds = clamp(settings.dgMaxRounds, 1, 5);
@@ -269,8 +308,12 @@ function registerSocketHandlers(io) {
       }
 
       if (currentRoom.mode === 'aiguess') {
-        // AI Guess doesn't strictly need more than 1 player if they just play alone, but let's say 1 is fine.
         aiguess.startGame(currentRoom, io);
+        return;
+      }
+
+      if (currentRoom.mode === 'turtlesoup') {
+        turtlesoup.startGame(currentRoom, io);
         return;
       }
 
@@ -436,6 +479,11 @@ function registerSocketHandlers(io) {
         const isH = aiguess.handleAIGuessMessage(currentRoom, socket, io, sanitized);
         if (isH) return;
       }
+
+      if (currentRoom.mode === 'turtlesoup') {
+        const isH = turtlesoup.handleTurtleSoupMessage(currentRoom, socket, io, sanitized);
+        if (isH) return;
+      }
       if (currentRoom.mode === 'undercover') {
         if (currentRoom.phase !== 'day') return;
         if (!player.alive) return;
@@ -454,6 +502,19 @@ function registerSocketHandlers(io) {
       if (!currentRoom || currentRoom.hostId !== socket.id) return;
       if (currentRoom.phase !== 'aiguessReveal') return;
       aiguess.returnToLobby(currentRoom, io);
+    });
+
+    // ---- 海龟汤 事件 ----
+    socket.on('turtlesoupEndGame', () => {
+      if (!currentRoom || currentRoom.hostId !== socket.id) return;
+      if (currentRoom.mode !== 'turtlesoup' || currentRoom.phase !== 'turtleSoupGuessing') return;
+      turtlesoup.endRound(currentRoom, io);
+    });
+
+    socket.on('turtlesoupReturnToLobby', () => {
+      if (!currentRoom || currentRoom.hostId !== socket.id) return;
+      if (currentRoom.phase !== 'turtleSoupReveal') return;
+      turtlesoup.returnToLobby(currentRoom, io);
     });
 
     // ---- 你画我猜 事件 ----
@@ -516,6 +577,13 @@ function registerSocketHandlers(io) {
       currentRoom.aiguess.scores = new Map();
       currentRoom.aiguess.processingQueue = [];
       currentRoom.aiguess.isProcessing = false;
+      currentRoom.turtlesoup.clue = '';
+      currentRoom.turtlesoup.targetWord = '';
+      currentRoom.turtlesoup.history = [];
+      currentRoom.turtlesoup.guessedPlayers = new Set();
+      currentRoom.turtlesoup.scores = new Map();
+      currentRoom.turtlesoup.processingQueue = [];
+      currentRoom.turtlesoup.isProcessing = false;
       broadcastRoomState(currentRoom, io);
     });
 
@@ -529,7 +597,7 @@ function registerSocketHandlers(io) {
         return;
       }
 
-      if (currentRoom.phase === 'waiting' || currentRoom.phase === 'ended' || currentRoom.phase === 'aiguessReveal') {
+      if (currentRoom.phase === 'waiting' || currentRoom.phase === 'ended' || currentRoom.phase === 'aiguessReveal' || currentRoom.phase === 'turtleSoupReveal' || currentRoom.phase === 'dgEnded') {
         currentRoom.players.delete(socket.id);
         if (sessionToken) sessions.delete(sessionToken);
         if (currentRoom.players.size === 0) { clearRoomTimer(currentRoom); rooms.delete(currentRoom.id); return; }

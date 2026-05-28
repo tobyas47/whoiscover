@@ -13,6 +13,7 @@ import DgPickPanel from './panels/DgPickPanel';
 import DgGamePanel from './panels/DgGamePanel';
 import DgEndPanel from './panels/DgEndPanel';
 import AIGuessPanel from './panels/AIGuessPanel';
+import TurtleSoupPanel from './panels/TurtleSoupPanel';
 
 export default function Room() {
   const { gameState } = useGame();
@@ -43,12 +44,16 @@ export default function Room() {
             {phase === 'dgEnded' && <DgEndPanel />}
             {phase === 'loading' && (
               <section className="panel">
-                <div className="panel-head"><h2>正在加载词库...</h2></div>
+                <div className="panel-head">
+                  <h2>{gameState?.mode === 'turtlesoup' ? '正在准备谜题...' : '正在加载词库...'}</h2>
+                </div>
                 <p style={{ padding: '1rem', color: 'var(--text-muted)' }}>正在从 Bangumi 获取番剧列表，请稍候</p>
               </section>
             )}
             {phase === 'aiGuessing' && <AIGuessPanel />}
             {phase === 'aiguessReveal' && <AIGuessPanel />}
+            {phase === 'turtleSoupGuessing' && <TurtleSoupPanel />}
+            {phase === 'turtleSoupReveal' && <TurtleSoupPanel />}
           </main>
         </div>
       </div>
