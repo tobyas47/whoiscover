@@ -56,8 +56,8 @@ export function GameProvider({ children }) {
       if (state.isSpectator) setIsSpectator(true);
       setIsHost(state.hostId === socket.id);
       setGameState(prev => {
-        // Clear chat messages on phase change
-        if (prev && prev.phase !== state.phase) setChatMessages([]);
+        // Clear chat when entering a new active phase; preserve when returning to waiting (so results stay visible)
+        if (prev && prev.phase !== state.phase && state.phase !== 'waiting' && state.phase !== 'aiguessReveal') setChatMessages([]);
         return state;
       });
     });

@@ -4,6 +4,7 @@ const { RECONNECT_GRACE } = require('./data');
 const { rooms, sessions, createRoom, broadcastRoomState, getRoomState, clearRoomTimer } = require('./room');
 const undercover = require('./undercover');
 const drawguess = require('./drawguess');
+const aiguess = require('./aiguess');
 
 function registerSocketHandlers(io) {
   undercover.init(io);
@@ -152,15 +153,18 @@ function registerSocketHandlers(io) {
       if (currentRoom.phase !== 'waiting') return;
       if (!settings || typeof settings !== 'object') return;
 
-      const modeChanged = settings.mode && ['undercover', 'drawguess'].includes(settings.mode) && settings.mode !== currentRoom.mode;
-      if (settings.mode && ['undercover', 'drawguess'].includes(settings.mode)) {
+      const modeChanged = settings.mode && ['undercover', 'drawguess', 'aiguess'].includes(settings.mode) && settings.mode !== currentRoom.mode;
+      if (settings.mode && ['undercover', 'drawguess', 'aiguess'].includes(settings.mode)) {
         currentRoom.mode = settings.mode;
       }
 
-      if (currentRoom.mode === 'drawguess') {
-        const clamp = (v, min, max) => Math.max(min, Math.min(max, v || min));
-        currentRoom.dg.maxRounds = clamp(settings.dgMaxRounds, 1, 5);
-        currentRoom.dg.drawTimer = clamp(settings.dgDrawTimer, 30, 9999);
+      // 共享Bangumi设置或特定设置
+      if (['drawguess', 'aiguess'].includes(currentRoom.mode)) {
+        if (currentRoom.mode === 'drawguess') {
+          const clamp = (v, min, max) => Math.max(min, Math.min(max, v || min));
+          currentRoom.dg.maxRounds = clamp(settings.dgMaxRounds, 1, 5);
+          currentRoom.dg.drawTimer = clamp(settings.dgDrawTimer, 30, 9999);
+        }
         // 词源设置
         if (settings.dgWordSource && ['builtin', 'upload', 'bangumi'].includes(settings.dgWordSource)) {
           currentRoom.dgWordSource = settings.dgWordSource;
@@ -168,21 +172,30 @@ function registerSocketHandlers(io) {
         // Bangumi 参数
         if (settings.dgBangumiOpts && typeof settings.dgBangumiOpts === 'object') {
           const o = settings.dgBangumiOpts;
+          const rankMax = parseInt(o.rankMax);
+          const rankMin = parseInt(o.rankMin);
+          const ratingMin = parseFloat(o.ratingMin);
+          const ratingCountMin = parseInt(o.ratingCountMin);
           currentRoom.dgBangumiOpts = {
             keyword: String(o.keyword || '').slice(0, 50),
             type: Array.isArray(o.type) ? o.type.filter(t => [1,2,3,4,6].includes(t)) : [2],
             year: o.year ? parseInt(o.year) || null : null,
+            yearEnd: o.yearEnd ? parseInt(o.yearEnd) || null : null,
             month: o.month ? parseInt(o.month) || null : null,
             tag: Array.isArray(o.tag) ? o.tag.map(t => String(t).slice(0, 20)).slice(0, 5) : [],
             sort: ['match','heat','rank','score'].includes(o.sort) ? o.sort : 'rank',
-            limit: Math.min(Math.max(parseInt(o.limit) || 50, 10), 50)
+            limit: Math.min(Math.max(parseInt(o.limit) || 50, 10), 50),
+            rankMax: (!isNaN(rankMax) && rankMax > 0) ? rankMax : null,
+            rankMin: (!isNaN(rankMin) && rankMin > 0) ? rankMin : null,
+            ratingMin: (!isNaN(ratingMin) && ratingMin > 0) ? ratingMin : null,
+            ratingCountMin: (!isNaN(ratingCountMin) && ratingCountMin > 0) ? ratingCountMin : null
           };
         }
         broadcastRoomState(currentRoom, io);
         return;
       }
 
-      // If only the mode changed (back to undercover), broadcast immediately
+      // If only the mode changed, broadcast immediately
       if (modeChanged) {
         broadcastRoomState(currentRoom, io);
         return;
@@ -252,6 +265,12 @@ function registerSocketHandlers(io) {
       if (currentRoom.mode === 'drawguess') {
         if (currentRoom.players.size < 2) return socket.emit('error', '至少需要2名玩家');
         drawguess.dgStartGame(currentRoom);
+        return;
+      }
+
+      if (currentRoom.mode === 'aiguess') {
+        // AI Guess doesn't strictly need more than 1 player if they just play alone, but let's say 1 is fine.
+        aiguess.startGame(currentRoom, io);
         return;
       }
 
@@ -413,11 +432,28 @@ function registerSocketHandlers(io) {
         return;
       }
 
-      if (currentRoom.mode !== 'drawguess') {
+      if (currentRoom.mode === 'aiguess') {
+        const isH = aiguess.handleAIGuessMessage(currentRoom, socket, io, sanitized);
+        if (isH) return;
+      }
+      if (currentRoom.mode === 'undercover') {
         if (currentRoom.phase !== 'day') return;
         if (!player.alive) return;
       }
       io.to(currentRoom.id).emit('chatMessage', { name: player.name, message: sanitized, playerId: socket.id });
+    });
+
+    // ---- AI猜番 事件 ----
+    socket.on('aiguessEndGame', () => {
+      if (!currentRoom || currentRoom.hostId !== socket.id) return;
+      if (currentRoom.mode !== 'aiguess' || currentRoom.phase !== 'aiGuessing') return;
+      aiguess.endRound(currentRoom, io);
+    });
+
+    socket.on('aiguessReturnToLobby', () => {
+      if (!currentRoom || currentRoom.hostId !== socket.id) return;
+      if (currentRoom.phase !== 'aiguessReveal') return;
+      aiguess.returnToLobby(currentRoom, io);
     });
 
     // ---- 你画我猜 事件 ----
@@ -474,6 +510,12 @@ function registerSocketHandlers(io) {
       currentRoom.dg.strokes = [];
       currentRoom.dg.currentWord = '';
       currentRoom.dg.guessedPlayers = new Set();
+      currentRoom.aiguess.targetWord = '';
+      currentRoom.aiguess.history = [];
+      currentRoom.aiguess.guessedPlayers = new Set();
+      currentRoom.aiguess.scores = new Map();
+      currentRoom.aiguess.processingQueue = [];
+      currentRoom.aiguess.isProcessing = false;
       broadcastRoomState(currentRoom, io);
     });
 
@@ -487,7 +529,7 @@ function registerSocketHandlers(io) {
         return;
       }
 
-      if (currentRoom.phase === 'waiting' || currentRoom.phase === 'ended') {
+      if (currentRoom.phase === 'waiting' || currentRoom.phase === 'ended' || currentRoom.phase === 'aiguessReveal') {
         currentRoom.players.delete(socket.id);
         if (sessionToken) sessions.delete(sessionToken);
         if (currentRoom.players.size === 0) { clearRoomTimer(currentRoom); rooms.delete(currentRoom.id); return; }

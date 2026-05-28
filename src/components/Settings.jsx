@@ -16,13 +16,19 @@ export default function Settings() {
   const [dgTimer, setDgTimer] = useState(gameState?.dg?.drawTimer || 80);
 
   // Bangumi settings
-  const [dgWordSource, setDgWordSource] = useState(gameState?.dg?.wordSource || 'builtin');
-  const [bgmKeyword, setBgmKeyword] = useState(gameState?.dg?.bangumiOpts?.keyword || '');
-  const [bgmType, setBgmType] = useState(gameState?.dg?.bangumiOpts?.type?.[0] || 2);
-  const [bgmYear, setBgmYear] = useState(gameState?.dg?.bangumiOpts?.year || '');
-  const [bgmMonth, setBgmMonth] = useState(gameState?.dg?.bangumiOpts?.month || '');
-  const [bgmTag, setBgmTag] = useState((gameState?.dg?.bangumiOpts?.tag || []).join(','));
-  const [bgmSort, setBgmSort] = useState(gameState?.dg?.bangumiOpts?.sort || 'rank');
+  const [dgWordSource, setDgWordSource] = useState(gameState?.dg?.wordSource || gameState?.dgWordSource || 'builtin');
+  const _initBgm = gameState?.dg?.bangumiOpts || gameState?.dgBangumiOpts || {};
+  const [bgmKeyword, setBgmKeyword] = useState(_initBgm.keyword || '');
+  const [bgmType, setBgmType] = useState(_initBgm.type?.length ? _initBgm.type : [2]);
+  const [bgmYear, setBgmYear] = useState(_initBgm.year || '');
+  const [bgmYearEnd, setBgmYearEnd] = useState(_initBgm.yearEnd || '');
+  const [bgmMonth, setBgmMonth] = useState(_initBgm.month || '');
+  const [bgmTag, setBgmTag] = useState((_initBgm.tag || []).join(','));
+  const [bgmSort, setBgmSort] = useState(_initBgm.sort || 'rank');
+  const [bgmRankMin, setBgmRankMin] = useState(_initBgm.rankMin || '');
+  const [bgmRankMax, setBgmRankMax] = useState(_initBgm.rankMax || '');
+  const [bgmRatingMin, setBgmRatingMin] = useState(_initBgm.ratingMin || '');
+  const [bgmRatingCountMin, setBgmRatingCountMin] = useState(_initBgm.ratingCountMin || '');
 
   // Sync local state when server broadcasts updated gameState
   useEffect(() => {
@@ -38,7 +44,22 @@ export default function Settings() {
     if (ns.voteTimer) setVoteTimer(ns.voteTimer);
     if (gameState.dg?.maxRounds) setDgRounds(gameState.dg.maxRounds);
     if (gameState.dg?.drawTimer) setDgTimer(gameState.dg.drawTimer);
-    if (gameState.dg?.wordSource) setDgWordSource(gameState.dg.wordSource);
+    const wsrc = gameState.dg?.wordSource || gameState.dgWordSource;
+    if (wsrc) setDgWordSource(wsrc);
+    const bOpts = gameState.dg?.bangumiOpts ?? gameState.dgBangumiOpts;
+    if (bOpts) {
+      if (bOpts.keyword != null) setBgmKeyword(bOpts.keyword || '');
+      if (bOpts.type?.length) setBgmType(bOpts.type);
+      if (bOpts.year != null) setBgmYear(bOpts.year || '');
+      if (bOpts.yearEnd != null) setBgmYearEnd(bOpts.yearEnd || '');
+      if (bOpts.month != null) setBgmMonth(bOpts.month || '');
+      if (bOpts.tag) setBgmTag(bOpts.tag.join(','));
+      if (bOpts.sort) setBgmSort(bOpts.sort);
+      if (bOpts.rankMin != null) setBgmRankMin(bOpts.rankMin || '');
+      if (bOpts.rankMax != null) setBgmRankMax(bOpts.rankMax || '');
+      if (bOpts.ratingMin != null) setBgmRatingMin(bOpts.ratingMin || '');
+      if (bOpts.ratingCountMin != null) setBgmRatingCountMin(bOpts.ratingCountMin || '');
+    }
   }, [gameState]);
 
   function sync(overrides = {}) {
@@ -49,11 +70,16 @@ export default function Settings() {
       dgWordSource: overrides.dgWordSource || dgWordSource,
       dgBangumiOpts: {
         keyword: overrides.bgmKeyword ?? bgmKeyword,
-        type: [overrides.bgmType ?? bgmType],
+        type: overrides.bgmType ?? bgmType,
         year: (overrides.bgmYear ?? bgmYear) || null,
+        yearEnd: (overrides.bgmYearEnd ?? bgmYearEnd) || null,
         month: (overrides.bgmMonth ?? bgmMonth) || null,
         tag: (overrides.bgmTag ?? bgmTag) ? (overrides.bgmTag ?? bgmTag).split(',').map(t => t.trim()).filter(Boolean) : [],
-        sort: overrides.bgmSort ?? bgmSort
+        sort: overrides.bgmSort ?? bgmSort,
+        rankMin: (overrides.bgmRankMin ?? bgmRankMin) || null,
+        rankMax: (overrides.bgmRankMax ?? bgmRankMax) || null,
+        ratingMin: (overrides.bgmRatingMin ?? bgmRatingMin) || null,
+        ratingCountMin: (overrides.bgmRatingCountMin ?? bgmRatingCountMin) || null
       },
       ...overrides
     };
@@ -88,52 +114,67 @@ export default function Settings() {
         <select value={mode} onChange={handleModeChange}>
           <option value="undercover">谁是卧底</option>
           <option value="drawguess">你画我猜</option>
+          <option value="aiguess">AI猜番</option>
         </select>
       </div>
       <div className="setting-divider"></div>
 
-      {mode === 'drawguess' ? (
+      {(mode === 'drawguess' || mode === 'aiguess') ? (
         <div>
-          <div className="setting-row">
-            <span>回合数</span>
-            <select value={dgRounds} onChange={e => { setDgRounds(+e.target.value); sync({ dgMaxRounds: +e.target.value }); }}>
-              {[1,2,3,4,5].map(n => <option key={n} value={n}>{n}轮</option>)}
-            </select>
-          </div>
-          <div className="setting-row">
-            <span>画画时长</span>
-            <select value={dgTimer} onChange={e => { setDgTimer(+e.target.value); sync({ dgDrawTimer: +e.target.value }); }}>
-              {[40,60,80,100,120].map(n => <option key={n} value={n}>{n >= 120 ? `${n/60}分钟` : `${n}秒`}</option>)}
-            </select>
-          </div>
-          <div className="setting-divider"></div>
-          <div className="setting-row">
-            <span>词库来源</span>
-            <select value={dgWordSource} onChange={e => { setDgWordSource(e.target.value); sync({ dgWordSource: e.target.value }); }}>
-              <option value="builtin">内置词库</option>
-              <option value="upload">上传词库</option>
-              <option value="bangumi">Bangumi动画</option>
-            </select>
-          </div>
+          {mode === 'drawguess' && (
+            <>
+              <div className="setting-row">
+                <span>回合数</span>
+                <select value={dgRounds} onChange={e => { setDgRounds(+e.target.value); sync({ dgMaxRounds: +e.target.value }); }}>
+                  {[1,2,3,4,5].map(n => <option key={n} value={n}>{n}轮</option>)}
+                </select>
+              </div>
+              <div className="setting-row">
+                <span>画画时长</span>
+                <select value={dgTimer} onChange={e => { setDgTimer(+e.target.value); sync({ dgDrawTimer: +e.target.value }); }}>
+                  {[40,60,80,100,120].map(n => <option key={n} value={n}>{n >= 120 ? `${n/60}分钟` : `${n}秒`}</option>)}
+                </select>
+              </div>
+              <div className="setting-divider"></div>
+              <div className="setting-row">
+                <span>词库来源</span>
+                <select value={dgWordSource} onChange={e => { setDgWordSource(e.target.value); sync({ dgWordSource: e.target.value }); }}>
+                  <option value="builtin">内置词库</option>
+                  <option value="upload">上传词库</option>
+                  <option value="bangumi">Bangumi动画</option>
+                </select>
+              </div>
+            </>
+          )}
 
-          {dgWordSource === 'upload' && (
+          {dgWordSource === 'upload' && mode === 'drawguess' && (
             <div>
               <input type="file" accept=".json" onChange={e => handleUpload(e, 'dg')} />
               <p className="upload-hint">格式：["词1", "词2", "词3", ...]</p>
             </div>
           )}
 
-          {dgWordSource === 'bangumi' && (
+          {(dgWordSource === 'bangumi' || mode === 'aiguess') && (
             <div className="bgm-settings">
-              <div className="setting-row">
-                <span>条目类型</span>
-                <select value={bgmType} onChange={e => { setBgmType(+e.target.value); sync({ bgmType: +e.target.value }); }}>
-                  <option value={2}>动画</option>
-                  <option value={4}>游戏</option>
-                  <option value={1}>书籍</option>
-                  <option value={6}>三次元</option>
-                  <option value={3}>音乐</option>
-                </select>
+              <div className="setting-row" style={{ alignItems: 'flex-start' }}>
+                <span style={{ paddingTop: '2px' }}>条目类型</span>
+                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                  {[{v:2,l:'动画'},{v:4,l:'游戏'},{v:1,l:'书籍'},{v:6,l:'三次元'},{v:3,l:'音乐'}].map(opt => (
+                    <label key={opt.v} style={{ display: 'flex', alignItems: 'center', gap: '3px', cursor: 'pointer', fontSize: '0.9rem' }}>
+                      <input
+                        type="checkbox"
+                        checked={bgmType.includes(opt.v)}
+                        onChange={e => {
+                          const next = e.target.checked ? [...bgmType, opt.v] : bgmType.filter(t => t !== opt.v);
+                          if (next.length === 0) return;
+                          setBgmType(next);
+                          sync({ bgmType: next });
+                        }}
+                      />
+                      {opt.l}
+                    </label>
+                  ))}
+                </div>
               </div>
               <div className="setting-row">
                 <span>关键词</span>
@@ -148,16 +189,31 @@ export default function Settings() {
               </div>
               <div className="setting-row">
                 <span>年份</span>
-                <input
-                  type="number"
-                  className="bgm-input"
-                  value={bgmYear}
-                  placeholder="如 2024"
-                  min={1990}
-                  max={2030}
-                  onChange={e => setBgmYear(e.target.value)}
-                  onBlur={() => sync({})}
-                />
+                <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                  <input
+                    type="number"
+                    className="bgm-input"
+                    value={bgmYear}
+                    placeholder="起始"
+                    min={1990}
+                    max={2030}
+                    style={{ width: '70px' }}
+                    onChange={e => setBgmYear(e.target.value)}
+                    onBlur={() => sync({})}
+                  />
+                  <span style={{ color: 'var(--text-muted)' }}>—</span>
+                  <input
+                    type="number"
+                    className="bgm-input"
+                    value={bgmYearEnd}
+                    placeholder="结束"
+                    min={1990}
+                    max={2030}
+                    style={{ width: '70px' }}
+                    onChange={e => setBgmYearEnd(e.target.value)}
+                    onBlur={() => sync({})}
+                  />
+                </div>
               </div>
               <div className="setting-row">
                 <span>月份</span>
@@ -187,6 +243,45 @@ export default function Settings() {
                   <option value="score">评分</option>
                   <option value="heat">热度</option>
                   <option value="match">匹配度</option>
+                </select>
+              </div>
+              <div className="setting-row">
+                <span>排名上限</span>
+                <select value={bgmRankMax} onChange={e => { setBgmRankMax(e.target.value); sync({ bgmRankMax: e.target.value }); }}>
+                  <option value="">不限</option>
+                  <option value="100">前 100</option>
+                  <option value="200">前 200</option>
+                  <option value="500">前 500</option>
+                  <option value="1000">前 1000</option>
+                </select>
+              </div>
+              <div className="setting-row">
+                <span>排名下限</span>
+                <select value={bgmRankMin} onChange={e => { setBgmRankMin(e.target.value); sync({ bgmRankMin: e.target.value }); }}>
+                  <option value="">不限</option>
+                  <option value="10">10 名以外</option>
+                  <option value="20">20 名以外</option>
+                  <option value="50">50 名以外</option>
+                  <option value="100">100 名以外</option>
+                </select>
+              </div>
+              <div className="setting-row">
+                <span>最低评分</span>
+                <select value={bgmRatingMin} onChange={e => { setBgmRatingMin(e.target.value); sync({ bgmRatingMin: e.target.value }); }}>
+                  <option value="">不限</option>
+                  <option value="6">6 分以上</option>
+                  <option value="7">7 分以上</option>
+                  <option value="8">8 分以上</option>
+                </select>
+              </div>
+              <div className="setting-row">
+                <span>最低热度</span>
+                <select value={bgmRatingCountMin} onChange={e => { setBgmRatingCountMin(e.target.value); sync({ bgmRatingCountMin: e.target.value }); }}>
+                  <option value="">不限</option>
+                  <option value="500">500 人以上</option>
+                  <option value="1000">1000 人以上</option>
+                  <option value="5000">5000 人以上</option>
+                  <option value="10000">10000 人以上</option>
                 </select>
               </div>
               <p className="upload-hint">开始游戏时将从 Bangumi 获取动画名称作为词库</p>

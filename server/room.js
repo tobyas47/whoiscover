@@ -40,6 +40,14 @@ function createRoom(hostId, hostName) {
     timerEnd: null,
     spectators: new Map(),
     readyPlayers: new Set(),
+    aiguess: {
+      history: [],
+      targetWord: '',
+      guessedPlayers: new Set(),
+      scores: new Map(),
+      processingQueue: [], // For ordering messages safely
+      isProcessing: false,
+    },
     dg: {
       scores: new Map(),
       drawOrder: [],
@@ -86,6 +94,18 @@ function getRoomState(room, playerId) {
     readyTotal: Array.from(room.players.values()).filter(p => p.alive).length,
     iReady: room.readyPlayers ? room.readyPlayers.has(playerId) : false
   };
+
+  if (room.mode === 'aiguess') {
+    state.aiguess = {
+      guessedCount: room.aiguess.guessedPlayers.size,
+      totalPlayers: room.players.size,
+      isProcessing: room.aiguess.isProcessing,
+      scores: Array.from(room.aiguess.scores.entries()).map(([id, s]) => ({ id, score: s })),
+      targetWord: room.phase === 'aiguessReveal' ? room.aiguess.targetWord : undefined
+    };
+    state.dgBangumiOpts = room.dgBangumiOpts || null;
+    state.dgWordSource = room.dgWordSource || 'bangumi';
+  }
 
   if (room.mode === 'drawguess') {
     const dg = room.dg;

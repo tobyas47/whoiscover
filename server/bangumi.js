@@ -7,7 +7,7 @@ function getToken() {
 
 /**
  * 从 Bangumi 搜索条目，返回名称列表
- * @param {object} opts - { keyword, type, year, month, tag, sort, limit }
+ * @param {object} opts - { keyword, type, year, yearEnd, month, tag, sort, limit, rankMax, ratingMin }
  * @returns {Promise<string[]>}
  */
 async function fetchBangumiWords(opts = {}) {
@@ -18,20 +18,47 @@ async function fetchBangumiWords(opts = {}) {
   };
   if (token) headers['Authorization'] = `Bearer ${token}`;
 
-  const { keyword = '', type, year, month, tag, sort = 'rank', limit = 50 } = opts;
+  const { keyword = '', type, year, yearEnd, month, tag, sort = 'rank', limit = 50, rankMax, rankMin, ratingMin, ratingCountMin } = opts;
 
-  // Build filter
   const filter = {};
   if (type != null) filter.type = Array.isArray(type) ? type : [type];
   if (tag && tag.length > 0) filter.tag = Array.isArray(tag) ? tag : [tag];
-  if (year) {
-    const startDate = month
-      ? `${year}-${String(month).padStart(2, '0')}-01`
-      : `${year}-01-01`;
-    const endDate = month
-      ? `${year}-${String(month).padStart(2, '0')}-31`
-      : `${year}-12-31`;
-    filter.air_date = [`>=${startDate}`, `<=${endDate}`];
+  filter.nsfw = false;
+  if (rankMax || rankMin) {
+    const rankConds = [];
+    if (rankMin) rankConds.push(`>=${rankMin}`);
+    if (rankMax) rankConds.push(`<=${rankMax}`);
+    filter.rank = rankConds;
+  }
+  if (ratingMin) filter.rating = [`>=${ratingMin}`];
+  if (ratingCountMin) filter.rating_count = [`>=${ratingCountMin}`];
+
+  if (year || yearEnd) {
+    const startYear = year ? parseInt(year) : null;
+    const endYear = yearEnd ? parseInt(yearEnd) : startYear;
+    const m = month ? parseInt(month) : null;
+
+    const airDate = [];
+
+    if (startYear) {
+      const startStr = m
+        ? `${startYear}-${String(m).padStart(2, '0')}-01`
+        : `${startYear}-01-01`;
+      airDate.push(`>=${startStr}`);
+    }
+
+    if (endYear) {
+      if (m) {
+        // end of the 3-month season quarter in endYear
+        const nextM = (m + 3 > 12) ? m + 3 - 12 : m + 3;
+        const nextY = (m + 3 > 12) ? endYear + 1 : endYear;
+        airDate.push(`<${nextY}-${String(nextM).padStart(2, '0')}-01`);
+      } else {
+        airDate.push(`<=${endYear}-12-31`);
+      }
+    }
+
+    if (airDate.length > 0) filter.air_date = airDate;
   }
 
   const body = { keyword: keyword || '', sort };
