@@ -18,7 +18,7 @@ async function fetchBangumiWords(opts = {}) {
   };
   if (token) headers['Authorization'] = `Bearer ${token}`;
 
-  const { keyword = '', type, year, yearEnd, month, tag, sort = 'rank', limit = 50, rankMax, rankMin, ratingMin, ratingCountMin } = opts;
+  const { keyword = '', type, year, yearEnd, month, tag, sort = 'rank', limit = 50, offset = 0, rankMax, rankMin, ratingMin, ratingCountMin } = opts;
 
   const filter = {};
   if (type != null) filter.type = Array.isArray(type) ? type : [type];
@@ -64,7 +64,7 @@ async function fetchBangumiWords(opts = {}) {
   const body = { keyword: keyword || '', sort };
   if (Object.keys(filter).length > 0) body.filter = filter;
 
-  const url = `${BANGUMI_BASE}/v0/search/subjects?limit=${limit}&offset=0`;
+  const url = `${BANGUMI_BASE}/v0/search/subjects?limit=${limit}&offset=${offset}`;
 
   try {
     const res = await fetch(url, {

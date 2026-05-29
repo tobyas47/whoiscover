@@ -58,6 +58,7 @@ function createRoom(hostId, hostName) {
       scores: new Map(),
       processingQueue: [],
       isProcessing: false,
+      usedWords: new Set(),
     },
     dg: {
       scores: new Map(),

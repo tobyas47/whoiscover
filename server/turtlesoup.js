@@ -154,7 +154,9 @@ async function startGame(room, io) {
   room.phase = 'loading';
   broadcastRoomState(room, io);
 
-  const words = await fetchBangumiWords(room.dgBangumiOpts || { keyword: '', type: [2], sort: 'rank', limit: 50 });
+  const randomOffset = Math.floor(Math.random() * 200);
+  const baseOpts = room.dgBangumiOpts || { keyword: '', type: [2], sort: 'rank', limit: 50 };
+  const words = await fetchBangumiWords({ ...baseOpts, offset: randomOffset });
   if (words.length === 0) {
     room.phase = 'waiting';
     io.to(room.id).emit('chatMessage', { type: 'system', text: '错误：无法从Bangumi获取词库。' });
@@ -162,8 +164,12 @@ async function startGame(room, io) {
     return;
   }
 
-  const target = words[Math.floor(Math.random() * words.length)];
+  if (!room.turtlesoup.usedWords) room.turtlesoup.usedWords = new Set();
+  const unused = words.filter(w => !room.turtlesoup.usedWords.has(w));
+  const pool = unused.length > 0 ? unused : words;
+  const target = pool[Math.floor(Math.random() * pool.length)];
   const ts = room.turtlesoup;
+  ts.usedWords.add(target);
   ts.targetWord = target;
   ts.history = [];
   ts.clue = '';
