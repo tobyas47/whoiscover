@@ -1,6 +1,7 @@
 // ============ 谁是卧底 游戏逻辑 ============
 const { wordPairs } = require('./data');
 const { broadcastRoomState, clearRoomTimer, setRoomTimer } = require('./room');
+const { shuffle } = require('./utils');
 
 let io; // set via init()
 
@@ -25,7 +26,7 @@ function assignRoles(room) {
     room.goodWord = pair[1]; room.badWord = pair[0];
   }
 
-  const shuffled = [...playerIds].sort(() => Math.random() - 0.5);
+  const shuffled = shuffle(playerIds);
   let index = 0;
 
   for (let i = 0; i < undercoverCount && index < shuffled.length; i++, index++) {
@@ -51,7 +52,7 @@ function assignRoles(room) {
 
 function preAssignAngel(room) {
   const playerIds = Array.from(room.players.keys());
-  const shuffled = [...playerIds].sort(() => Math.random() - 0.5);
+  const shuffled = shuffle(playerIds);
   const { undercoverCount, angelCount, blankCount } = room.settings;
 
   for (const [_, p] of room.players) { p.role = null; p.word = null; p.alive = true; }
@@ -159,7 +160,7 @@ function startDayPhase(room) {
     checkWinCondition(room);
     return;
   }
-  room.dayDiscussionOrder = alivePlayers.sort(() => Math.random() - 0.5);
+  room.dayDiscussionOrder = shuffle(alivePlayers);
   room.currentSpeaker = 0;
 
   if (room.round > 1) {

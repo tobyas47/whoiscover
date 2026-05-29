@@ -18,20 +18,26 @@ async function fetchBangumiWords(opts = {}) {
   };
   if (token) headers['Authorization'] = `Bearer ${token}`;
 
-  const { keyword = '', type, year, yearEnd, month, tag, sort = 'rank', limit = 50, offset = 0, rankMax, rankMin, ratingMin, ratingCountMin } = opts;
+  const { keyword = '', type, year, yearEnd, month, tag, sort = 'rank', limit = 50, offset = 0, rankMax, rankMin, ratingMin, ratingMax, ratingCountMin, ratingCountMax, nsfw } = opts;
 
   const filter = {};
   if (type != null) filter.type = Array.isArray(type) ? type : [type];
   if (tag && tag.length > 0) filter.tag = Array.isArray(tag) ? tag : [tag];
-  filter.nsfw = false;
+  filter.nsfw = nsfw === true ? true : false;
   if (rankMax || rankMin) {
     const rankConds = [];
     if (rankMin) rankConds.push(`>=${rankMin}`);
     if (rankMax) rankConds.push(`<=${rankMax}`);
     filter.rank = rankConds;
   }
-  if (ratingMin) filter.rating = [`>=${ratingMin}`];
-  if (ratingCountMin) filter.rating_count = [`>=${ratingCountMin}`];
+  const ratingConds = [];
+  if (ratingMin) ratingConds.push(`>=${ratingMin}`);
+  if (ratingMax) ratingConds.push(`<=${ratingMax}`);
+  if (ratingConds.length > 0) filter.rating = ratingConds;
+  const rcConds = [];
+  if (ratingCountMin) rcConds.push(`>=${ratingCountMin}`);
+  if (ratingCountMax) rcConds.push(`<=${ratingCountMax}`);
+  if (rcConds.length > 0) filter.rating_count = rcConds;
 
   if (year || yearEnd) {
     const startYear = year ? parseInt(year) : null;

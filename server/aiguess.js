@@ -152,7 +152,9 @@ async function startGame(room, io) {
   room.phase = 'loading';
   broadcastRoomState(room, io);
 
-  const words = await fetchBangumiWords(room.dgBangumiOpts || { keyword: '', type: [2], sort: 'rank', limit: 50 });
+  const baseOpts = room.dgBangumiOpts || { keyword: '', type: [2], sort: 'rank', limit: 50 };
+  const randomOffset = Math.floor(Math.random() * Math.max(200, (baseOpts.limit || 50) * 3));
+  const words = await fetchBangumiWords({ ...baseOpts, offset: randomOffset });
   if (words.length === 0) {
     room.phase = 'waiting';
     io.to(room.id).emit('chatMessage', { type: 'system', text: '错误：无法从Bangumi获取词库。' });

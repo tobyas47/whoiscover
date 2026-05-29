@@ -214,7 +214,9 @@ function registerSocketHandlers(io) {
           const rankMax = parseInt(o.rankMax);
           const rankMin = parseInt(o.rankMin);
           const ratingMin = parseFloat(o.ratingMin);
+          const ratingMax = parseFloat(o.ratingMax);
           const ratingCountMin = parseInt(o.ratingCountMin);
+          const ratingCountMax = parseInt(o.ratingCountMax);
           currentRoom.dgBangumiOpts = {
             keyword: String(o.keyword || '').slice(0, 50),
             type: Array.isArray(o.type) ? o.type.filter(t => [1,2,3,4,6].includes(t)) : [2],
@@ -223,11 +225,14 @@ function registerSocketHandlers(io) {
             month: o.month ? parseInt(o.month) || null : null,
             tag: Array.isArray(o.tag) ? o.tag.map(t => String(t).slice(0, 20)).slice(0, 5) : [],
             sort: ['match','heat','rank','score'].includes(o.sort) ? o.sort : 'rank',
-            limit: Math.min(Math.max(parseInt(o.limit) || 50, 10), 50),
+            limit: Math.min(Math.max(parseInt(o.limit) || 50, 10), 200),
             rankMax: (!isNaN(rankMax) && rankMax > 0) ? rankMax : null,
             rankMin: (!isNaN(rankMin) && rankMin > 0) ? rankMin : null,
             ratingMin: (!isNaN(ratingMin) && ratingMin > 0) ? ratingMin : null,
-            ratingCountMin: (!isNaN(ratingCountMin) && ratingCountMin > 0) ? ratingCountMin : null
+            ratingMax: (!isNaN(ratingMax) && ratingMax > 0) ? ratingMax : null,
+            ratingCountMin: (!isNaN(ratingCountMin) && ratingCountMin > 0) ? ratingCountMin : null,
+            ratingCountMax: (!isNaN(ratingCountMax) && ratingCountMax > 0) ? ratingCountMax : null,
+            nsfw: o.nsfw === true ? true : false
           };
         }
         broadcastRoomState(currentRoom, io);

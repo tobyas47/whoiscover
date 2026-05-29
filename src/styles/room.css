@@ -114,6 +114,14 @@
 /* Bangumi settings */
 .bgm-settings { margin-top: 8px; }
 .bgm-settings .setting-row { gap: 8px; }
+.bgm-section-label {
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: var(--ink-muted);
+  padding: 6px 0 2px;
+}
 .bgm-input {
   width: 100px;
   padding: 6px 10px;
@@ -126,6 +134,74 @@
 }
 .bgm-input:focus { border-color: var(--cinnabar); outline: none; }
 .bgm-input::placeholder { color: var(--ink-muted); }
+
+/* Slider rows */
+.bgm-slider-wrap {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.bgm-slider {
+  width: 130px;
+  accent-color: var(--cinnabar);
+  cursor: pointer;
+  height: 4px;
+}
+.bgm-slider-val {
+  min-width: 52px;
+  text-align: right;
+  font-size: 0.82rem;
+  color: var(--cinnabar);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Segment / pill buttons */
+.bgm-seg-group {
+  display: flex;
+  gap: 0;
+  border: 1.5px solid var(--ink-faint);
+  border-radius: var(--radius-pill);
+  overflow: hidden;
+}
+.bgm-seg-btn {
+  padding: 5px 10px;
+  background: var(--bg);
+  border: none;
+  font-family: var(--font-body);
+  font-size: 0.8rem;
+  color: var(--ink-muted);
+  cursor: pointer;
+  transition: background var(--transition), color var(--transition);
+  border-right: 1px solid var(--ink-faint);
+}
+.bgm-seg-btn:last-child { border-right: none; }
+.bgm-seg-btn.active {
+  background: var(--cinnabar);
+  color: #fff;
+  font-weight: 600;
+}
+.bgm-seg-btn:hover:not(.active) { background: var(--bg-warm); color: var(--ink); }
+
+/* Tag toggle buttons (类型) */
+.bgm-tag-btn {
+  padding: 4px 10px;
+  background: var(--bg);
+  border: 1.5px solid var(--ink-faint);
+  border-radius: var(--radius-pill);
+  font-family: var(--font-body);
+  font-size: 0.8rem;
+  color: var(--ink-muted);
+  cursor: pointer;
+  transition: var(--transition);
+}
+.bgm-tag-btn.active {
+  border-color: var(--cinnabar);
+  background: var(--cinnabar-bg);
+  color: var(--cinnabar);
+  font-weight: 600;
+}
+.bgm-tag-btn:hover:not(.active) { border-color: var(--ink-soft); color: var(--ink); }
 
 /* Angel Pick / Blank Guess Form */
 .angel-pick-form {

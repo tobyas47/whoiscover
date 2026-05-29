@@ -2,6 +2,7 @@
 const { drawGuessWords } = require('./data');
 const { fetchBangumiWords } = require('./bangumi');
 const { broadcastRoomState, clearRoomTimer, setRoomTimer } = require('./room');
+const { shuffle } = require('./utils');
 
 let io;
 
@@ -11,14 +12,13 @@ function dgPickRandomWords(room, count = 3) {
   const pool = room.dgWordPool && room.dgWordPool.length > 0
     ? room.dgWordPool
     : (room.customDgWords.length > 0 ? room.customDgWords : drawGuessWords);
-  const shuffled = [...pool].sort(() => Math.random() - 0.5);
-  return shuffled.slice(0, count);
+  return shuffle(pool).slice(0, count);
 }
 
 function dgStartGame(room) {
   const dg = room.dg;
   dg.scores = new Map();
-  dg.drawOrder = Array.from(room.players.keys()).sort(() => Math.random() - 0.5);
+  dg.drawOrder = shuffle(Array.from(room.players.keys()));
   dg.currentIdx = 0;
   dg.roundNum = 1;
   dg.guessedPlayers = new Set();
@@ -115,7 +115,7 @@ function dgNextTurn(room) {
     dg.currentIdx = 0;
     dg.roundNum++;
     if (dg.roundNum > dg.maxRounds) { dgEndGame(room); return; }
-    dg.drawOrder = dg.drawOrder.sort(() => Math.random() - 0.5);
+    dg.drawOrder = shuffle(dg.drawOrder);
     room.gameLog.push({ type: 'phase', message: `第 ${dg.roundNum} 轮开始！` });
   }
 
