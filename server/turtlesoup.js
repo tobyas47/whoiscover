@@ -45,7 +45,9 @@ async function generateClue(animeName) {
 async function getAIResponse(room, userMessage) {
   if (!aiClient) return { isCorrect: false, text: '无法回答。' };
   const ts = room.turtlesoup;
-  const contents = [...ts.history, { role: 'user', parts: [{ text: userMessage }] }];
+  const raw = ts.history.slice(-60);
+  const windowed = raw[0]?.role === 'model' ? raw.slice(1) : raw;
+  const contents = [...windowed, { role: 'user', parts: [{ text: userMessage }] }];
   try {
     const response = await aiClient.models.generateContent({
       model: ANSWER_MODEL,
@@ -120,21 +122,22 @@ async function processTurtleSoupQueue(room, io) {
         text: `🎉 ${pObj?.name || '玩家'} 猜对了！获得 ${score} 分`
       });
 
-      if (ts.guessedPlayers.size >= room.players.size) {
-        io.to(room.id).emit('chatMessage', {
-          type: 'system',
-          text: `全员猜对！游戏结束！答案是：${ts.targetWord}`
-        });
-        room.phase = 'turtleSoupReveal';
-      }
+      io.to(room.id).emit('chatMessage', {
+        type: 'system',
+        text: `游戏结束！答案是：${ts.targetWord}`
+      });
+      room.phase = 'turtleSoupReveal';
+      ts.processingQueue = [];
 
       broadcastRoomState(room, io);
+      break;
     } else {
       io.to(room.id).emit('chatMessage', {
         type: 'chat',
         sender: 'AI',
         text: `@${player?.name || '玩家'} ${reply.text}`
       });
+      ts.qaLog.push({ playerName: player?.name || '玩家', question: message, answer: reply.text });
     }
   }
 
@@ -177,6 +180,7 @@ async function startGame(room, io) {
   ts.scores.clear();
   ts.processingQueue = [];
   ts.isProcessing = false;
+  ts.qaLog = [];
 
   io.to(room.id).emit('chatMessage', { type: 'system', text: 'AI正在生成谜面，请稍候...' });
   ts.clue = await generateClue(target);
