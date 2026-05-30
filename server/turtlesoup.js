@@ -23,10 +23,11 @@ const CLUE_PROMPT = (name) =>
 
 const SYSTEM_INSTRUCTION = `You are playing a guessing game called 海龟汤 (turtle soup).
 A cryptic riddle about an anime was shown to players.
-Players ask yes/no questions to guess the anime, or try to guess the exact anime name.
+Players ask yes/no questions to guess the anime, or try to guess the anime name.
 For questions or incorrect guesses, ONLY answer with one of: "是。" (Yes), "不是。" (No), "无法回答。" (Cannot answer).
 Do NOT explain. Do NOT reveal the anime name.
-If a player correctly guesses the exact anime name, call the end_game tool with their name.`;
+If a player guesses the correct anime name, call the end_game tool with their name.
+IMPORTANT: Season/cour/part qualifiers are OPTIONAL. A guess is correct if the player names the same anime series, even without specifying the season (e.g., guessing "进击的巨人" is CORRECT when the target is "进击的巨人 第四季"). Do NOT reject a guess solely because it omits "第X季", "第X期", "Season X", "Part X", or similar qualifiers.`;
 
 async function generateClue(animeName) {
   if (!aiClient) return '（谜面生成失败）';
@@ -61,7 +62,7 @@ async function getAIResponse(room, userMessage) {
         tools: [{
           functionDeclarations: [{
             name: 'end_game',
-            description: 'Call this ONLY when the user correctly guesses the exact target anime name.',
+            description: 'Call this when the user correctly guesses the target anime name. Season/part qualifiers are optional — call this if the base anime name matches, even without a season number.',
             parameters: {
               type: 'OBJECT',
               properties: { winnerName: { type: 'STRING', description: 'Name of the winner.' } },
