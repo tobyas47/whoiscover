@@ -75,7 +75,8 @@ function createRoom(hostId, hostName) {
       roundNum: 1,
       maxRounds: 2,
       drawTimer: 80,
-      strokes: []
+      strokes: [],
+      usedWords: new Set()
     },
     _lastActivity: Date.now()
   };

@@ -557,6 +557,20 @@ function registerSocketHandlers(io) {
       socket.to(currentRoom.id).emit('dgClear');
     });
 
+    socket.on('dgUndoStrokes', (keepCount) => {
+      if (!currentRoom || currentRoom.mode !== 'drawguess' || currentRoom.phase !== 'dgDrawing') return;
+      const dg = currentRoom.dg;
+      if (socket.id !== dg.drawOrder[dg.currentIdx]) return;
+      if (typeof keepCount !== 'number' || keepCount < 0 || keepCount > dg.strokes.length) return;
+      dg.strokes = dg.strokes.slice(0, keepCount);
+      io.to(currentRoom.id).emit('dgRedrawStrokes', dg.strokes);
+    });
+
+    socket.on('dgRequestStrokes', () => {
+      if (!currentRoom || currentRoom.mode !== 'drawguess' || currentRoom.phase !== 'dgDrawing') return;
+      socket.emit('dgRedrawStrokes', currentRoom.dg.strokes);
+    });
+
     socket.on('dgRestart', () => {
       if (!currentRoom || currentRoom.mode !== 'drawguess' || currentRoom.hostId !== socket.id) return;
       if (!['dgEnded', 'dgReveal', 'dgDrawing', 'dgPicking'].includes(currentRoom.phase)) return;

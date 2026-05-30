@@ -12,7 +12,10 @@ function dgPickRandomWords(room, count = 3) {
   const pool = room.dgWordPool && room.dgWordPool.length > 0
     ? room.dgWordPool
     : (room.customDgWords.length > 0 ? room.customDgWords : drawGuessWords);
-  return shuffle(pool).slice(0, count);
+  const usedWords = room.dg.usedWords;
+  const unused = pool.filter(w => !usedWords.has(w));
+  const source = unused.length >= count ? unused : pool;
+  return shuffle(source).slice(0, count);
 }
 
 function dgStartGame(room) {
@@ -24,6 +27,7 @@ function dgStartGame(room) {
   dg.guessedPlayers = new Set();
   dg.strokes = [];
   dg.currentWord = '';
+  dg.usedWords = new Set();
   for (const [id] of room.players) dg.scores.set(id, 0);
   room.gameLog = [{ type: 'phase', message: '🎨 你画我猜开始！' }];
 
@@ -37,7 +41,9 @@ function dgStartGame(room) {
       }
     }, 8000);
 
-    fetchBangumiWords(room.dgBangumiOpts).then(subjects => {
+    const baseOpts = room.dgBangumiOpts;
+    const randomOffset = Math.floor(Math.random() * Math.max(200, (baseOpts.limit || 50) * 3));
+    fetchBangumiWords({ ...baseOpts, offset: randomOffset }).then(subjects => {
       clearTimeout(fallbackTimeout);
       const words = subjects.map(s => s.name);
       room.dgWordPool = words.length >= 3 ? words : [];
@@ -82,6 +88,7 @@ function dgStartDrawing(room) {
   const dg = room.dg;
   room.phase = 'dgDrawing';
   dg.strokes = [];
+  dg.usedWords.add(dg.currentWord);
 
   // Notify all clients to clear their canvas for the new turn
   io.to(room.id).emit('dgNewTurn');

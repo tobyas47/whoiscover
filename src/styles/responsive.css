@@ -197,7 +197,7 @@
   .setting-row { padding: 10px 0; font-size: 0.9rem; }
   .setting-row select { padding: 8px 14px; font-size: 0.88rem; border-radius: 8px; }
 
-  .canvas-wrap canvas { max-height: calc(100vh - 330px); width: auto; max-width: 100%; }
+  .canvas-wrap canvas { width: 100%; height: auto; }
 }
 
 /* ============================================================
