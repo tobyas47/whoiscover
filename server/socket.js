@@ -513,6 +513,11 @@ function registerSocketHandlers(io) {
     });
 
     // ---- 海龟汤 事件 ----
+    socket.on('requestHint', () => {
+      if (!currentRoom || currentRoom.mode !== 'turtlesoup') return;
+      turtlesoup.handleHintRequest(currentRoom, io);
+    });
+
     socket.on('turtlesoupEndGame', () => {
       if (!currentRoom || currentRoom.hostId !== socket.id) return;
       if (currentRoom.mode !== 'turtlesoup' || currentRoom.phase !== 'turtleSoupGuessing') return;
@@ -580,6 +585,8 @@ function registerSocketHandlers(io) {
       currentRoom.dg.currentWord = '';
       currentRoom.dg.guessedPlayers = new Set();
       currentRoom.aiguess.targetWord = '';
+      currentRoom.aiguess.targetYear = null;
+      currentRoom.aiguess.targetScore = null;
       currentRoom.aiguess.history = [];
       currentRoom.aiguess.guessedPlayers = new Set();
       currentRoom.aiguess.scores = new Map();
@@ -587,11 +594,15 @@ function registerSocketHandlers(io) {
       currentRoom.aiguess.isProcessing = false;
       currentRoom.turtlesoup.clue = '';
       currentRoom.turtlesoup.targetWord = '';
+      currentRoom.turtlesoup.targetYear = null;
+      currentRoom.turtlesoup.targetScore = null;
       currentRoom.turtlesoup.history = [];
       currentRoom.turtlesoup.guessedPlayers = new Set();
       currentRoom.turtlesoup.scores = new Map();
       currentRoom.turtlesoup.processingQueue = [];
       currentRoom.turtlesoup.isProcessing = false;
+      currentRoom.turtlesoup.hintImageUrl = null;
+      currentRoom.turtlesoup.hintLevel = 0;
       broadcastRoomState(currentRoom, io);
     });
 

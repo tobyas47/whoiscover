@@ -37,8 +37,9 @@ function dgStartGame(room) {
       }
     }, 8000);
 
-    fetchBangumiWords(room.dgBangumiOpts).then(words => {
+    fetchBangumiWords(room.dgBangumiOpts).then(subjects => {
       clearTimeout(fallbackTimeout);
+      const words = subjects.map(s => s.name);
       room.dgWordPool = words.length >= 3 ? words : [];
       if (room.dgWordPool.length === 0) {
         room.gameLog.push({ type: 'system', message: 'Bangumi词库获取失败，使用默认词库' });

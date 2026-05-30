@@ -87,12 +87,23 @@ async function fetchBangumiWords(opts = {}) {
     const data = await res.json();
     if (!data.data || !Array.isArray(data.data)) return [];
 
-    // 优先用中文名，没有则用原名，过滤过长的
-    const names = data.data
-      .map(s => (s.name_cn && s.name_cn.trim()) || s.name)
-      .filter(n => n && n.length >= 2 && n.length <= 30);
+    // 优先用中文名，没有则用原名，过滤过长的；同时保留封面图、年份、评分
+    const subjects = data.data
+      .map(s => {
+        const name = (s.name_cn && s.name_cn.trim()) || s.name;
+        const imageUrl = s.images?.large || s.images?.common || null;
+        const year = s.date ? parseInt(s.date.slice(0, 4)) || null : null;
+        const score = s.rating?.score || null;
+        return {
+          name,
+          imageUrl: imageUrl && !imageUrl.includes('no_icon_subject') ? imageUrl : null,
+          year,
+          score,
+        };
+      })
+      .filter(s => s.name && s.name.length >= 2 && s.name.length <= 30);
 
-    return names;
+    return subjects;
   } catch (err) {
     console.error('Bangumi fetch error:', err.message);
     return [];

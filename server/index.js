@@ -18,6 +18,24 @@ const io = new Server(server, {
   pingInterval: 25000
 });
 
+// 图片代理 — 用于将 Bangumi 封面图代理到同源，供客户端 Canvas 使用
+app.get('/api/hint-image', async (req, res) => {
+  const { url } = req.query;
+  if (typeof url !== 'string' || !url.startsWith('https://lain.bgm.tv/')) {
+    return res.status(400).end();
+  }
+  try {
+    const imgRes = await fetch(url, { headers: { 'User-Agent': 'whoiscover-game/1.0' } });
+    if (!imgRes.ok) return res.status(404).end();
+    const buffer = Buffer.from(await imgRes.arrayBuffer());
+    res.set('Content-Type', imgRes.headers.get('content-type') || 'image/jpeg');
+    res.set('Cache-Control', 'public, max-age=3600');
+    res.send(buffer);
+  } catch {
+    res.status(502).end();
+  }
+});
+
 // 静态文件 — production serves dist/, development falls back to public/
 const distPath = path.join(__dirname, '..', 'dist');
 const publicPath = path.join(__dirname, '..', 'public');

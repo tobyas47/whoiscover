@@ -53,7 +53,11 @@ async function getAIResponse(room, userMessage) {
       model: ANSWER_MODEL,
       contents,
       config: {
-        systemInstruction: SYSTEM_INSTRUCTION + `\nThe target anime is: ${ts.targetWord}\nThe clue (谜面) shown to players is: ${ts.clue}`,
+        systemInstruction: SYSTEM_INSTRUCTION +
+          `\nThe target anime is: ${ts.targetWord}` +
+          (ts.targetYear ? `\nYear: ${ts.targetYear}` : '') +
+          (ts.targetScore ? `\nBangumi score: ${ts.targetScore}` : '') +
+          `\nThe clue (谜面) shown to players is: ${ts.clue}`,
         tools: [{
           functionDeclarations: [{
             name: 'end_game',
@@ -159,8 +163,8 @@ async function startGame(room, io) {
 
   const baseOpts = room.dgBangumiOpts || { keyword: '', type: [2], sort: 'rank', limit: 50 };
   const randomOffset = Math.floor(Math.random() * Math.max(200, (baseOpts.limit || 50) * 3));
-  const words = await fetchBangumiWords({ ...baseOpts, offset: randomOffset });
-  if (words.length === 0) {
+  const subjects = await fetchBangumiWords({ ...baseOpts, offset: randomOffset });
+  if (subjects.length === 0) {
     room.phase = 'waiting';
     io.to(room.id).emit('chatMessage', { type: 'system', text: '错误：无法从Bangumi获取词库。' });
     broadcastRoomState(room, io);
@@ -168,12 +172,16 @@ async function startGame(room, io) {
   }
 
   if (!room.turtlesoup.usedWords) room.turtlesoup.usedWords = new Set();
-  const unused = words.filter(w => !room.turtlesoup.usedWords.has(w));
-  const pool = unused.length > 0 ? unused : words;
-  const target = pool[Math.floor(Math.random() * pool.length)];
+  const unused = subjects.filter(s => !room.turtlesoup.usedWords.has(s.name));
+  const pool = unused.length > 0 ? unused : subjects;
+  const picked = pool[Math.floor(Math.random() * pool.length)];
   const ts = room.turtlesoup;
-  ts.usedWords.add(target);
-  ts.targetWord = target;
+  ts.usedWords.add(picked.name);
+  ts.targetWord = picked.name;
+  ts.targetYear = picked.year || null;
+  ts.targetScore = picked.score || null;
+  ts.hintImageUrl = picked.imageUrl || null;
+  ts.hintLevel = 0;
   ts.history = [];
   ts.clue = '';
   ts.guessedPlayers.clear();
@@ -183,7 +191,7 @@ async function startGame(room, io) {
   ts.qaLog = [];
 
   io.to(room.id).emit('chatMessage', { type: 'system', text: 'AI正在生成谜面，请稍候...' });
-  ts.clue = await generateClue(target);
+  ts.clue = await generateClue(picked.name);
 
   room.phase = 'turtleSoupGuessing';
   broadcastRoomState(room, io);
@@ -197,8 +205,18 @@ function endRound(room, io) {
 }
 
 function returnToLobby(room, io) {
+  room.turtlesoup.hintImageUrl = null;
+  room.turtlesoup.hintLevel = 0;
   room.phase = 'waiting';
   broadcastRoomState(room, io);
 }
 
-module.exports = { startGame, handleTurtleSoupMessage, endRound, returnToLobby };
+function handleHintRequest(room, io) {
+  if (room.phase !== 'turtleSoupGuessing') return;
+  const ts = room.turtlesoup;
+  if (ts.hintLevel >= 3 || !ts.hintImageUrl) return;
+  ts.hintLevel++;
+  broadcastRoomState(room, io);
+}
+
+module.exports = { startGame, handleTurtleSoupMessage, endRound, returnToLobby, handleHintRequest };

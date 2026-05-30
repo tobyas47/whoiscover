@@ -28,7 +28,10 @@ async function getAIResponse(room, userMessage) {
       model: 'gemini-3.1-flash-lite',
       contents: contents,
       config: {
-        systemInstruction: SYSTEM_INSTRUCTION + `\nThe target anime is: ${room.aiguess.targetWord}`,
+        systemInstruction: SYSTEM_INSTRUCTION +
+          `\nThe target anime is: ${room.aiguess.targetWord}` +
+          (room.aiguess.targetYear ? `\nYear: ${room.aiguess.targetYear}` : '') +
+          (room.aiguess.targetScore ? `\nBangumi score: ${room.aiguess.targetScore}` : ''),
         tools: [{
           functionDeclarations: [{
             name: "end_game",
@@ -154,15 +157,18 @@ async function startGame(room, io) {
 
   const baseOpts = room.dgBangumiOpts || { keyword: '', type: [2], sort: 'rank', limit: 50 };
   const randomOffset = Math.floor(Math.random() * Math.max(200, (baseOpts.limit || 50) * 3));
-  const words = await fetchBangumiWords({ ...baseOpts, offset: randomOffset });
-  if (words.length === 0) {
+  const subjects = await fetchBangumiWords({ ...baseOpts, offset: randomOffset });
+  if (subjects.length === 0) {
     room.phase = 'waiting';
     io.to(room.id).emit('chatMessage', { type: 'system', text: '错误：无法从Bangumi获取词库。' });
     broadcastRoomState(room, io);
     return;
   }
 
-  room.aiguess.targetWord = words[Math.floor(Math.random() * words.length)];
+  const picked = subjects[Math.floor(Math.random() * subjects.length)];
+  room.aiguess.targetWord = picked.name;
+  room.aiguess.targetYear = picked.year || null;
+  room.aiguess.targetScore = picked.score || null;
   room.aiguess.history = [];
   room.aiguess.guessedPlayers.clear();
   room.aiguess.scores.clear();

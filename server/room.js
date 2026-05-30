@@ -60,6 +60,10 @@ function createRoom(hostId, hostName) {
       isProcessing: false,
       usedWords: new Set(),
       qaLog: [],
+      hintImageUrl: null,
+      hintLevel: 0,
+      targetYear: null,
+      targetScore: null,
     },
     dg: {
       scores: new Map(),
@@ -129,6 +133,8 @@ function getRoomState(room, playerId) {
       scores: Array.from(room.turtlesoup.scores.entries()).map(([id, s]) => ({ id, score: s })),
       targetWord: room.phase === 'turtleSoupReveal' ? room.turtlesoup.targetWord : undefined,
       qaLog: room.turtlesoup.qaLog || [],
+      hintImageUrl: room.turtlesoup.hintImageUrl || null,
+      hintLevel: room.turtlesoup.hintLevel || 0,
     };
     state.dgBangumiOpts = room.dgBangumiOpts || null;
     state.dgWordSource = room.dgWordSource || 'bangumi';

@@ -19,21 +19,49 @@ function answerColor(answer) {
   return 'var(--ink-muted)';
 }
 
+const HINT_BLOCK_SIZES = [0, 32, 12, 4];
+
 export default function TurtleSoupPanel() {
   const { gameState, chatMessages, emit, isHost } = useGame();
   const [msg, setMsg] = useState('');
   const [sortKey, setSortKey] = useState('default');
   const [sortDir, setSortDir] = useState('asc');
+  const [mosaicUrl, setMosaicUrl] = useState(null);
   const chatRef = useRef(null);
 
   const phase = gameState?.phase;
   const ts = gameState?.turtlesoup;
   const players = gameState?.players || [];
   const isReveal = phase === 'turtleSoupReveal';
+  const hintImageUrl = ts?.hintImageUrl || null;
+  const hintLevel = ts?.hintLevel || 0;
 
   useEffect(() => {
     if (chatRef.current) chatRef.current.scrollTop = chatRef.current.scrollHeight;
   }, [chatMessages]);
+
+  useEffect(() => {
+    if (!hintImageUrl || hintLevel === 0) { setMosaicUrl(null); return; }
+    const blockSize = HINT_BLOCK_SIZES[Math.min(hintLevel, 3)];
+    const proxyUrl = `/api/hint-image?url=${encodeURIComponent(hintImageUrl)}`;
+    const img = new Image();
+    img.onload = () => {
+      const W = img.naturalWidth, H = img.naturalHeight;
+      const sw = Math.max(1, Math.round(W / blockSize));
+      const sh = Math.max(1, Math.round(H / blockSize));
+      const tmp = document.createElement('canvas');
+      tmp.width = sw; tmp.height = sh;
+      tmp.getContext('2d').drawImage(img, 0, 0, sw, sh);
+      const out = document.createElement('canvas');
+      out.width = W; out.height = H;
+      const ctx = out.getContext('2d');
+      ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(tmp, 0, 0, W, H);
+      setMosaicUrl(out.toDataURL('image/jpeg', 0.85));
+    };
+    img.onerror = () => setMosaicUrl(null);
+    img.src = proxyUrl;
+  }, [hintImageUrl, hintLevel]);
 
   function send() {
     if (!msg.trim() || isReveal) return;
@@ -95,6 +123,37 @@ export default function TurtleSoupPanel() {
           {isReveal && ts?.targetWord && (
             <div style={{ padding: '0.5rem 0', borderBottom: '1px solid var(--ink-faint)', fontSize: '1rem', marginBottom: '8px' }}>
               答案是：<strong>{ts.targetWord}</strong>
+            </div>
+          )}
+
+          {!isReveal && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.25rem 0', marginBottom: '8px', borderBottom: mosaicUrl ? 'none' : '1px solid var(--ink-faint)' }}>
+              <button
+                className="btn btn-ghost"
+                style={{ fontSize: '0.8rem', padding: '0.2rem 0.7rem' }}
+                onClick={() => emit('requestHint')}
+                disabled={hintLevel >= 3}
+              >
+                图片提示{hintLevel > 0 ? ` (${hintLevel}/3)` : ''}
+              </button>
+              {hintLevel > 0 && hintLevel < 3 && (
+                <span style={{ fontSize: '0.75rem', color: 'var(--ink-muted)' }}>
+                  再点一次可以看得更清楚
+                </span>
+              )}
+              {hintLevel >= 3 && (
+                <span style={{ fontSize: '0.75rem', color: 'var(--ink-muted)' }}>已达最高清晰度</span>
+              )}
+            </div>
+          )}
+
+          {mosaicUrl && (
+            <div style={{ marginBottom: '8px', borderBottom: '1px solid var(--ink-faint)', paddingBottom: '8px', textAlign: 'center' }}>
+              <img
+                src={mosaicUrl}
+                alt="图片提示"
+                style={{ maxWidth: '100%', maxHeight: '200px', objectFit: 'contain', imageRendering: 'pixelated', display: 'block', margin: '0 auto' }}
+              />
             </div>
           )}
 
