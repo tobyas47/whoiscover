@@ -19,7 +19,13 @@ function answerColor(answer) {
   return 'var(--ink-muted)';
 }
 
-const HINT_BLOCK_SIZES = [0, 32, 12, 4];
+// blockSize: 像素块边长（越大越模糊）；cropRatio: 显示原图的比例（<1 = 局部裁剪）
+const HINT_CONFIGS = [
+  null,
+  { blockSize: 32, cropRatio: 0.4 },
+  { blockSize: 10, cropRatio: 1.0 },
+  { blockSize: 3,  cropRatio: 1.0 },
+];
 
 export default function TurtleSoupPanel() {
   const { gameState, chatMessages, emit, isHost } = useGame();
@@ -42,21 +48,27 @@ export default function TurtleSoupPanel() {
 
   useEffect(() => {
     if (!hintImageUrl || hintLevel === 0) { setMosaicUrl(null); return; }
-    const blockSize = HINT_BLOCK_SIZES[Math.min(hintLevel, 3)];
+    const { blockSize, cropRatio } = HINT_CONFIGS[Math.min(hintLevel, 3)];
     const proxyUrl = `/api/hint-image?url=${encodeURIComponent(hintImageUrl)}`;
     const img = new Image();
     img.onload = () => {
       const W = img.naturalWidth, H = img.naturalHeight;
-      const sw = Math.max(1, Math.round(W / blockSize));
-      const sh = Math.max(1, Math.round(H / blockSize));
+      // 居中裁剪
+      const cropW = Math.round(W * cropRatio);
+      const cropH = Math.round(H * cropRatio);
+      const cropX = Math.round((W - cropW) / 2);
+      const cropY = Math.round((H - cropH) / 2);
+      // 缩小再放大实现像素化
+      const sw = Math.max(1, Math.round(cropW / blockSize));
+      const sh = Math.max(1, Math.round(cropH / blockSize));
       const tmp = document.createElement('canvas');
       tmp.width = sw; tmp.height = sh;
-      tmp.getContext('2d').drawImage(img, 0, 0, sw, sh);
+      tmp.getContext('2d').drawImage(img, cropX, cropY, cropW, cropH, 0, 0, sw, sh);
       const out = document.createElement('canvas');
-      out.width = W; out.height = H;
+      out.width = cropW; out.height = cropH;
       const ctx = out.getContext('2d');
       ctx.imageSmoothingEnabled = false;
-      ctx.drawImage(tmp, 0, 0, W, H);
+      ctx.drawImage(tmp, 0, 0, cropW, cropH);
       setMosaicUrl(out.toDataURL('image/jpeg', 0.85));
     };
     img.onerror = () => setMosaicUrl(null);
