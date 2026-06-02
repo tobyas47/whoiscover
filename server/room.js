@@ -65,6 +65,21 @@ function createRoom(hostId, hostName) {
       targetYear: null,
       targetScore: null,
     },
+    rankguess: {
+      pool: [],
+      poolIdx: 0,
+      left: null,
+      right: null,
+      roundNum: 0,
+      roundTimer: 20,
+      startLives: 5,
+      lives: new Map(),
+      scores: new Map(),
+      choices: new Map(),
+      roundStart: 0,
+      lastResult: null,
+      finished: false,
+    },
     dg: {
       scores: new Map(),
       drawOrder: [],
@@ -82,6 +97,18 @@ function createRoom(hostId, hostName) {
   };
   rooms.set(roomId, room);
   return room;
+}
+
+// 番剧人气对决：猜测阶段隐藏人气/评分数据，揭晓阶段才返回
+function publicCardState(card, reveal) {
+  if (!card) return null;
+  return {
+    name: card.name,
+    imageUrl: card.imageUrl,
+    year: card.year || null,
+    score: reveal ? (card.score || null) : null,
+    ratingCount: reveal ? card.ratingCount : null,
+  };
 }
 
 function getRoomState(room, playerId) {
@@ -136,6 +163,41 @@ function getRoomState(room, playerId) {
       qaLog: room.turtlesoup.qaLog || [],
       hintImageUrl: room.turtlesoup.hintImageUrl || null,
       hintLevel: room.turtlesoup.hintLevel || 0,
+    };
+    state.dgBangumiOpts = room.dgBangumiOpts || null;
+    state.dgWordSource = room.dgWordSource || 'bangumi';
+  }
+
+  if (room.mode === 'rankguess') {
+    const rg = room.rankguess;
+    const reveal = room.phase === 'rankReveal';
+    const playerList = [];
+    for (const [id, p] of room.players) {
+      playerList.push({
+        id,
+        name: p.name,
+        lives: rg.lives.get(id) ?? rg.startLives,
+        score: rg.scores.get(id) || 0,
+        picked: rg.choices.has(id),
+        alive: (rg.lives.get(id) ?? rg.startLives) > 0,
+      });
+    }
+    const alive = playerList.filter(p => p.alive);
+    state.rankguess = {
+      left: publicCardState(rg.left, reveal),
+      right: publicCardState(rg.right, reveal),
+      roundNum: rg.roundNum,
+      roundTimer: rg.roundTimer,
+      startLives: rg.startLives,
+      poolTotal: rg.pool.length,
+      poolDone: rg.poolIdx,
+      myChoice: playerId ? (rg.choices.get(playerId)?.side || null) : null,
+      myLives: playerId ? (rg.lives.get(playerId) ?? rg.startLives) : null,
+      pickedCount: alive.filter(p => p.picked).length,
+      aliveCount: alive.length,
+      players: playerList,
+      result: reveal ? rg.lastResult : null,
+      finished: room.phase === 'rankEnded',
     };
     state.dgBangumiOpts = room.dgBangumiOpts || null;
     state.dgWordSource = room.dgWordSource || 'bangumi';

@@ -14,6 +14,8 @@ export default function Settings() {
   const [voteTimer, setVoteTimer] = useState(s.voteTimer || 30);
   const [dgRounds, setDgRounds] = useState(gameState?.dg?.maxRounds || 2);
   const [dgTimer, setDgTimer] = useState(gameState?.dg?.drawTimer || 80);
+  const [rankTimer, setRankTimer] = useState(gameState?.rankguess?.roundTimer || 20);
+  const [rankLives, setRankLives] = useState(gameState?.rankguess?.startLives || 5);
 
   // Bangumi settings
   const [dgWordSource, setDgWordSource] = useState(gameState?.dg?.wordSource || gameState?.dgWordSource || 'builtin');
@@ -48,6 +50,8 @@ export default function Settings() {
     if (ns.voteTimer) setVoteTimer(ns.voteTimer);
     if (gameState.dg?.maxRounds) setDgRounds(gameState.dg.maxRounds);
     if (gameState.dg?.drawTimer) setDgTimer(gameState.dg.drawTimer);
+    if (gameState.rankguess?.roundTimer) setRankTimer(gameState.rankguess.roundTimer);
+    if (gameState.rankguess?.startLives) setRankLives(gameState.rankguess.startLives);
     const wsrc = gameState.dg?.wordSource || gameState.dgWordSource;
     if (wsrc) setDgWordSource(wsrc);
     const bOpts = gameState.dg?.bangumiOpts ?? gameState.dgBangumiOpts;
@@ -76,6 +80,7 @@ export default function Settings() {
       mode, undercoverCount: ucCount, angelCount, blankCount,
       wordSource, dayTimer, nightTimer, voteTimer,
       dgMaxRounds: dgRounds, dgDrawTimer: dgTimer,
+      rankRoundTimer: rankTimer, rankLives,
       dgWordSource: overrides.dgWordSource || dgWordSource,
       dgBangumiOpts: {
         keyword: overrides.bgmKeyword ?? bgmKeyword,
@@ -129,12 +134,30 @@ export default function Settings() {
           <option value="drawguess">你画我猜</option>
           <option value="aiguess">AI猜番</option>
           <option value="turtlesoup">海龟汤</option>
+          <option value="rankguess">番剧人气对决</option>
         </select>
       </div>
       <div className="setting-divider"></div>
 
-      {(mode === 'drawguess' || mode === 'aiguess' || mode === 'turtlesoup') ? (
+      {(mode === 'drawguess' || mode === 'aiguess' || mode === 'turtlesoup' || mode === 'rankguess') ? (
         <div>
+          {mode === 'rankguess' && (
+            <>
+              <div className="setting-row">
+                <span>每轮时长</span>
+                <select value={rankTimer} onChange={e => { setRankTimer(+e.target.value); sync({ rankRoundTimer: +e.target.value }); }}>
+                  {[10,15,20,30,45,60].map(n => <option key={n} value={n}>{n}秒</option>)}
+                </select>
+              </div>
+              <div className="setting-row">
+                <span>初始生命</span>
+                <select value={rankLives} onChange={e => { setRankLives(+e.target.value); sync({ rankLives: +e.target.value }); }}>
+                  {[3,4,5,6,7,8].map(n => <option key={n} value={n}>{n}条</option>)}
+                </select>
+              </div>
+              <div className="setting-divider"></div>
+            </>
+          )}
           {mode === 'drawguess' && (
             <>
               <div className="setting-row">
@@ -168,7 +191,7 @@ export default function Settings() {
             </div>
           )}
 
-          {(dgWordSource === 'bangumi' || mode === 'aiguess' || mode === 'turtlesoup') && (
+          {(dgWordSource === 'bangumi' || mode === 'aiguess' || mode === 'turtlesoup' || mode === 'rankguess') && (
             <div className="bgm-settings">
               <div className="bgm-section-label">搜索</div>
 
