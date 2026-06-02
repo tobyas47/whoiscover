@@ -2,11 +2,59 @@
 // 两张番剧封面对决，所有玩家猜哪一部「评分人数（人气）」更高。
 // 全房间共享同一套番剧池、同一出场顺序。每轮所有存活玩家做出选择后揭晓，
 // 答对者按速度排名得分，答错（或超时未选）者扣 1 条命。
-const { fetchBangumiWords } = require('./bangumi');
+const { searchBangumiSubjects } = require('./bangumi');
 const { broadcastRoomState, clearRoomTimer, setRoomTimer } = require('./room');
 const { shuffle } = require('./utils');
 
 const REVEAL_DURATION = 6; // 揭晓画面停留秒数
+
+// 在整个排行区间内散布抽样，构建一个「多样化」的番剧池。
+// 之前的做法是从单个随机 offset 连续取 limit 条，但 Bangumi 已按
+// 排名/评分/热度排好序，连续的 50 条彼此数值非常接近 ——
+// 于是「排名优先」总抽到同一分数、「热度优先」总抽到热度相似的作品。
+// 这里改为把抽样窗口均匀铺开在排行区间，让池子同时包含高/中/低的作品。
+async function buildDiversePool(baseOpts) {
+  const targetSize = baseOpts.limit || 50;
+  const chunkSize = 10;
+  const numChunks = Math.max(2, Math.ceil(targetSize / chunkSize));
+
+  const seen = new Set();
+  const combined = [];
+  const addAll = list => {
+    for (const s of list) {
+      if (s.name && !seen.has(s.name)) { seen.add(s.name); combined.push(s); }
+    }
+  };
+
+  // 先取顶部一页（带轻微抖动），顺便拿到结果总数 total
+  const firstOffset = Math.floor(Math.random() * chunkSize);
+  const first = await searchBangumiSubjects({ ...baseOpts, limit: chunkSize, offset: firstOffset });
+  const total = first.total || first.subjects.length;
+  addAll(first.subjects);
+
+  // 结果集本身就很小：直接整页取回即可，无需散布
+  if (total <= targetSize) {
+    const more = await searchBangumiSubjects({ ...baseOpts, limit: targetSize, offset: 0 });
+    addAll(more.subjects);
+    return combined;
+  }
+
+  // 把抽样窗口均匀铺开在排行区间（限定在前若干名以保证封面/数据质量），
+  // 每个窗口再加一点随机抖动，避免每局都抽到完全相同的作品。
+  const spread = Math.max(0, Math.min(total, Math.max(targetSize * 8, 400)) - chunkSize);
+  const offsets = [];
+  for (let i = 1; i < numChunks; i++) {
+    const base = Math.round((spread * i) / (numChunks - 1));
+    const jitter = Math.floor(Math.random() * chunkSize);
+    offsets.push(Math.min(spread, base + jitter));
+  }
+  const pages = await Promise.all(
+    offsets.map(off => searchBangumiSubjects({ ...baseOpts, limit: chunkSize, offset: off }))
+  );
+  for (const p of pages) addAll(p.subjects);
+
+  return combined;
+}
 
 function aliveIds(room) {
   const rg = room.rankguess;
@@ -18,8 +66,7 @@ async function startGame(room, io) {
   broadcastRoomState(room, io);
 
   const baseOpts = room.dgBangumiOpts || { keyword: '', type: [2], sort: 'heat', limit: 50 };
-  const randomOffset = Math.floor(Math.random() * Math.max(200, (baseOpts.limit || 50) * 3));
-  let subjects = await fetchBangumiWords({ ...baseOpts, offset: randomOffset });
+  let subjects = await buildDiversePool(baseOpts);
 
   // 必须有封面图才能对决；人气数据缺失记为 0
   let withImage = subjects.filter(s => s.imageUrl);
