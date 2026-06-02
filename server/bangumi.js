@@ -6,11 +6,21 @@ function getToken() {
 }
 
 /**
- * 从 Bangumi 搜索条目，返回名称列表
+ * 从 Bangumi 搜索条目，返回条目对象数组（仅取名称等字段）。
  * @param {object} opts - { keyword, type, year, yearEnd, month, tag, sort, limit, rankMax, ratingMin }
- * @returns {Promise<string[]>}
+ * @returns {Promise<object[]>}
  */
 async function fetchBangumiWords(opts = {}) {
+  const { subjects } = await searchBangumiSubjects(opts);
+  return subjects;
+}
+
+/**
+ * 与 fetchBangumiWords 相同的搜索，但额外返回结果总数 total，
+ * 便于调用方在整个排行区间内散布抽样。
+ * @returns {Promise<{ subjects: object[], total: number }>}
+ */
+async function searchBangumiSubjects(opts = {}) {
   const token = getToken();
   const headers = {
     'Content-Type': 'application/json',
@@ -81,11 +91,11 @@ async function fetchBangumiWords(opts = {}) {
 
     if (!res.ok) {
       console.error(`Bangumi API error: ${res.status} ${res.statusText}`);
-      return [];
+      return { subjects: [], total: 0 };
     }
 
     const data = await res.json();
-    if (!data.data || !Array.isArray(data.data)) return [];
+    if (!data.data || !Array.isArray(data.data)) return { subjects: [], total: 0 };
 
     // 优先用中文名，没有则用原名，过滤过长的；同时保留封面图、年份、评分
     const subjects = data.data
@@ -105,11 +115,11 @@ async function fetchBangumiWords(opts = {}) {
       })
       .filter(s => s.name && s.name.length >= 2 && s.name.length <= 30);
 
-    return subjects;
+    return { subjects, total: typeof data.total === 'number' ? data.total : subjects.length };
   } catch (err) {
     console.error('Bangumi fetch error:', err.message);
-    return [];
+    return { subjects: [], total: 0 };
   }
 }
 
-module.exports = { fetchBangumiWords };
+module.exports = { fetchBangumiWords, searchBangumiSubjects };
