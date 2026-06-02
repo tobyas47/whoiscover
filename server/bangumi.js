@@ -94,11 +94,13 @@ async function fetchBangumiWords(opts = {}) {
         const imageUrl = s.images?.large || s.images?.common || null;
         const year = s.date ? parseInt(s.date.slice(0, 4)) || null : null;
         const score = s.rating?.score || null;
+        const ratingCount = s.rating?.total || 0;
         return {
           name,
           imageUrl: imageUrl && !imageUrl.includes('no_icon_subject') ? imageUrl : null,
           year,
           score,
+          ratingCount,
         };
       })
       .filter(s => s.name && s.name.length >= 2 && s.name.length <= 30);

@@ -14,6 +14,7 @@ import DgGamePanel from './panels/DgGamePanel';
 import DgEndPanel from './panels/DgEndPanel';
 import AIGuessPanel from './panels/AIGuessPanel';
 import TurtleSoupPanel from './panels/TurtleSoupPanel';
+import RankGuessPanel from './panels/RankGuessPanel';
 
 export default function Room() {
   const { gameState } = useGame();
@@ -54,6 +55,9 @@ export default function Room() {
             {phase === 'aiguessReveal' && <AIGuessPanel />}
             {phase === 'turtleSoupGuessing' && <TurtleSoupPanel />}
             {phase === 'turtleSoupReveal' && <TurtleSoupPanel />}
+            {phase === 'rankGuessing' && <RankGuessPanel />}
+            {phase === 'rankReveal' && <RankGuessPanel />}
+            {phase === 'rankEnded' && <RankGuessPanel />}
           </main>
         </div>
       </div>

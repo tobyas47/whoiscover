@@ -556,3 +556,94 @@ body.night {
   .panel { padding: 20px 16px; }
   .chat-scroll { height: 160px; }
 }
+
+/* ============ 番剧人气对决 (rankguess) ============ */
+.rg-panel .panel-head h2 { display: flex; align-items: center; gap: 10px; }
+.rg-round {
+  font-size: 0.75rem; font-weight: 600; color: var(--ink-muted);
+  background: var(--bg-warm); padding: 2px 10px; border-radius: var(--radius-pill);
+}
+.rg-head-right { display: flex; align-items: center; gap: 12px; font-size: 0.8rem; color: var(--ink-muted); }
+.rg-timer {
+  font-variant-numeric: tabular-nums; font-weight: 700; color: var(--indigo);
+  background: var(--bg-warm); padding: 2px 10px; border-radius: var(--radius-pill);
+}
+.rg-timer.urgent { color: #fff; background: var(--cinnabar); animation: rg-pulse 1s infinite; }
+@keyframes rg-pulse { 50% { opacity: 0.55; } }
+
+.rg-prompt {
+  text-align: center; color: var(--ink-soft); font-size: 0.95rem;
+  margin: 10px 0 16px; min-height: 1.4em;
+}
+
+.rg-arena { display: flex; align-items: stretch; justify-content: center; gap: 14px; }
+.rg-vs {
+  align-self: center; font-family: var(--font-display); font-weight: 800;
+  font-size: 1.4rem; color: var(--cinnabar); flex-shrink: 0;
+}
+
+.rg-card {
+  flex: 1; max-width: 300px; display: flex; flex-direction: column;
+  background: var(--bg-card); border: 2px solid var(--ink-faint);
+  border-radius: var(--radius); overflow: hidden; cursor: pointer; padding: 0;
+  transition: transform var(--transition), border-color var(--transition), box-shadow var(--transition);
+  text-align: left;
+}
+.rg-card:not(.disabled):hover { transform: translateY(-4px); border-color: var(--indigo); box-shadow: var(--shadow-md); }
+.rg-card.disabled { cursor: default; }
+.rg-card.picked { border-color: var(--indigo); box-shadow: 0 0 0 3px var(--indigo-soft); }
+.rg-card.winner { border-color: var(--jade); box-shadow: 0 0 0 3px var(--jade), var(--shadow-md); }
+.rg-card.loser { opacity: 0.5; filter: grayscale(0.5); }
+.rg-card-empty { background: var(--bg-warm); border-style: dashed; }
+
+.rg-card-img-wrap { position: relative; width: 100%; aspect-ratio: 3 / 4; background: var(--bg-warm); overflow: hidden; }
+.rg-card-img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.rg-card-noimg { width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; color: var(--ink-muted); font-size: 0.85rem; }
+.rg-winner-badge {
+  position: absolute; top: 8px; left: 8px; background: var(--jade); color: #fff;
+  font-size: 0.72rem; font-weight: 700; padding: 3px 8px; border-radius: var(--radius-pill);
+}
+.rg-picked-badge {
+  position: absolute; bottom: 8px; right: 8px; background: var(--indigo); color: #fff;
+  font-size: 0.7rem; font-weight: 700; padding: 3px 8px; border-radius: var(--radius-pill);
+}
+.rg-card-body { padding: 10px 12px; }
+.rg-card-name { font-family: var(--font-display); font-weight: 700; font-size: 1rem; line-height: 1.3; color: var(--ink); }
+.rg-card-year { font-size: 0.75rem; color: var(--ink-muted); margin-top: 2px; }
+.rg-card-stats { display: flex; gap: 10px; align-items: baseline; margin-top: 6px; }
+.rg-card-count { font-weight: 700; color: var(--cinnabar); font-size: 0.9rem; }
+.rg-card-score { font-size: 0.8rem; color: var(--ink-muted); }
+
+.rg-hearts { white-space: nowrap; letter-spacing: 1px; }
+.rg-heart { font-size: 0.85rem; }
+.rg-heart.empty { opacity: 0.4; }
+
+.rg-mystatus {
+  display: flex; align-items: center; justify-content: center; gap: 18px;
+  margin-top: 16px; font-size: 0.9rem; color: var(--ink-soft);
+}
+.rg-res-good { color: var(--jade); font-weight: 700; }
+.rg-res-bad { color: var(--cinnabar); font-weight: 700; }
+
+.rg-scoreboard { margin-top: 18px; border-top: 1px solid var(--ink-faint); padding-top: 12px; }
+.rg-sb-title { font-size: 0.7rem; font-weight: 700; letter-spacing: 1.5px; text-transform: uppercase; color: var(--ink-muted); margin-bottom: 8px; }
+.rg-sb-list { display: flex; flex-direction: column; gap: 4px; }
+.rg-sb-row {
+  display: flex; align-items: center; gap: 10px; padding: 5px 10px;
+  border-radius: var(--radius-sm); font-size: 0.9rem;
+}
+.rg-sb-row.me { background: var(--bg-warm); }
+.rg-sb-row.dead { opacity: 0.5; }
+.rg-sb-rank { width: 1.4em; text-align: center; font-weight: 700; color: var(--ink-muted); }
+.rg-sb-name { flex: 1; font-weight: 600; color: var(--ink); }
+.rg-sb-score { font-variant-numeric: tabular-nums; font-weight: 700; color: var(--indigo); min-width: 3.5em; text-align: right; }
+.rg-sb-delta { font-weight: 700; min-width: 2.5em; text-align: right; }
+.rg-sb-delta.good { color: var(--jade); }
+.rg-sb-delta.bad { color: var(--cinnabar); }
+
+@media (max-width: 560px) {
+  .rg-arena { gap: 8px; }
+  .rg-vs { font-size: 1.1rem; }
+  .rg-card-name { font-size: 0.85rem; }
+  .rg-head-right { gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+}
