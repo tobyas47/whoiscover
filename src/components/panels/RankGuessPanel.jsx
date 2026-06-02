@@ -149,9 +149,10 @@ export default function RankGuessPanel() {
         </>
       )}
 
-      {/* 计分板 */}
+      {/* 计分板：进行/揭晓阶段移到侧边栏，这里仅在结算页显示最终排名 */}
+      {isEnded && (
       <div className="rg-scoreboard">
-        <div className="rg-sb-title">{isEnded ? '最终排名' : '计分板'}</div>
+        <div className="rg-sb-title">最终排名</div>
         <div className="rg-sb-list">
           {sorted.map((p, i) => {
             const r = result?.results?.find(x => x.id === p.id);
@@ -171,6 +172,7 @@ export default function RankGuessPanel() {
           })}
         </div>
       </div>
+      )}
 
       {isHost && (isPlaying || isReveal) && (
         <button className="btn btn-ghost full-width mt" onClick={() => emit('rankguessEndGame')}>

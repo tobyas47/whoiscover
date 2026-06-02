@@ -646,6 +646,14 @@ body.night {
 .rg-sb-delta.good { color: var(--jade); }
 .rg-sb-delta.bad { color: var(--cinnabar); }
 
+/* 侧边栏内的计分板：去掉为面板设计的分隔线，作为独立卡片呈现 */
+.rg-scoreboard-side {
+  margin-top: 0; border-top: none; padding: 14px 16px;
+  background: var(--bg-card); border-radius: var(--radius); box-shadow: var(--shadow-sm);
+  margin-bottom: 12px;
+}
+.rg-scoreboard-side .rg-sb-list { max-height: none; }
+
 @media (max-width: 560px) {
   .rg-arena { gap: 8px; }
   .rg-vs { font-size: 1.1rem; }
